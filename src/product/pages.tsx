@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BookOpenCheck, CalendarDays, ChevronDown, ClipboardList, Flame,
   Lightbulb, Play, Sparkles, Target, TrendingUp, Zap,
@@ -310,10 +310,9 @@ export function RunPage() {
   const answered = part1.filter((t) => (answers[t.number] ?? "").trim()).length;
   const tense = seconds < 30 * 60;
 
-  useMemo(() => {
+  useEffect(() => {
     const id = setInterval(() => setSeconds((s) => (s <= 1 ? 0 : s - 1)), 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const finish = () => {
