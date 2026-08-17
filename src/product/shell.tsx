@@ -145,7 +145,7 @@ export function Header() {
               </button>
             </>
           ) : (
-            <button onClick={() => go("home")} className="flex items-center gap-1.5 rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2 text-[12.5px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-[0.98]">
+            <button onClick={() => window.dispatchEvent(new CustomEvent("komi:login"))} className="flex items-center gap-1.5 rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2 text-[12.5px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-[0.98]">
               <LogIn className="h-3.5 w-3.5" />
               Войти
             </button>

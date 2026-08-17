@@ -1,0 +1,157 @@
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, GraduationCap, KeyRound, LogIn, UserPlus, X } from "lucide-react";
+import { useApp, loadSession, type ProductUser } from "./store";
+
+type StoredUser = ProductUser & { password: string };
+
+const SEED: StoredUser[] = [
+  { name: "Артём Попов", nickname: "artom", email: "artom@komi.ru", password: "1234", role: "student", grade: "11 класс", goal: 84 },
+  { name: "Даниил Пудов", nickname: "daniil_komi", email: "teacher@komi.ru", password: "1234", role: "teacher" },
+];
+
+function loadUsers(): StoredUser[] {
+  try {
+    const raw = localStorage.getItem("komi-users-v1");
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p) && p.length) return p;
+    }
+  } catch { /* ок */ }
+  return SEED;
+}
+
+export default function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { login } = useApp();
+  const [tab, setTab] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [name, setName] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [invite, setInvite] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setTab("login"); setError(null); }
+  }, [open]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    if (open) window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const field =
+    "w-full rounded-lg border-2 border-board-600/70 bg-board-800/60 px-3.5 py-2.5 text-sm font-medium text-chalk-50 outline-none transition-all duration-200 placeholder:text-chalk-500 focus:border-mark-yellow focus:bg-board-800 focus:ring-4 focus:ring-mark-yellow/10";
+
+  const submit = () => {
+    setError(null);
+    const users = loadUsers();
+    if (tab === "login") {
+      const found = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
+      if (!found) { setError("Неверный e-mail или пароль. Для демо: artom@komi.ru / 1234"); return; }
+      const { password: _pw, ...rest } = found;
+      login(rest);
+      onClose();
+      return;
+    }
+    if (name.trim().length < 2) { setError("Укажите имя — минимум 2 символа"); return; }
+    const nick = nickname.trim().replace(/^@/, "").toLowerCase();
+    if (nick && !/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
+    const finalNick = nick || name.trim().split(" ")[0].toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError("Похоже, в e-mail опечатка"); return; }
+    if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
+    if (users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) { setError("Такой e-mail уже зарегистрирован — войдите"); return; }
+    const code = invite.trim().toUpperCase();
+    const user: StoredUser = {
+      name: name.trim(), nickname: finalNick, email: email.trim().toLowerCase(), password, role: "student",
+      teacherCode: code || undefined, teacherName: code ? "Даниил Пудов" : undefined,
+      consentVersion: "1.0", consentAt: new Date().toISOString(),
+    };
+    try { localStorage.setItem("komi-users-v1", JSON.stringify([...users, user])); } catch { /* ок */ }
+    const { password: _pw, ...rest } = user;
+    login(rest);
+    onClose();
+  };
+
+  const quick = (u: StoredUser) => {
+    const { password: _pw, ...rest } = u;
+    login(rest);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-board-950/70 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+      <div className="pop-in max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-board-600/60 bg-board-850 p-6 shadow-2xl sm:rounded-xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Вход на платформу">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-mark-yellow text-board-950">
+              <GraduationCap className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-display text-lg font-bold tracking-tight text-chalk-50">Репетитор из Коми</h2>
+              <p className="text-[11px] text-chalk-500">личная история попыток и баллы</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-chalk-500 transition-colors hover:bg-board-700 hover:text-chalk-50" aria-label="Закрыть">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 rounded-lg border border-board-600/70 bg-board-800/60 p-1">
+          {(["login", "register"] as const).map((t) => (
+            <button key={t} onClick={() => { setTab(t); setError(null); }}
+              className={`flex items-center justify-center gap-1.5 rounded-md py-2 text-[13px] font-bold transition-all duration-200 ${tab === t ? "bg-mark-yellow text-board-950 shadow-sm" : "text-chalk-400 hover:text-chalk-50"}`}>
+              {t === "login" ? <LogIn className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+              {t === "login" ? "Вход" : "Регистрация"}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {tab === "register" && (
+            <>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя и фамилия" className={field} aria-label="Имя" />
+              <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ник для рейтинга — например masha_2026" className={field} aria-label="Ник" />
+            </>
+          )}
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" type="email" className={field} aria-label="E-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
+          <div className="relative">
+            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Пароль" type={showPw ? "text" : "password"} className={`${field} pr-11`} aria-label="Пароль" onKeyDown={(e) => e.key === "Enter" && submit()} />
+            <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-chalk-500 transition-colors hover:text-chalk-200" aria-label={showPw ? "Скрыть пароль" : "Показать пароль"}>
+              {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {tab === "register" && (
+            <div className="relative">
+              <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-chalk-500" />
+              <input value={invite} onChange={(e) => setInvite(e.target.value.toUpperCase())} placeholder="Код преподавателя (если есть) — KOMI-2026" className={`${field} pl-9 font-mono tracking-wider`} aria-label="Код приглашения" />
+            </div>
+          )}
+        </div>
+
+        {error && <p className="mt-3 text-[12.5px] font-semibold text-mark-red">{error}</p>}
+
+        <button onClick={submit} className="mt-5 w-full rounded-lg bg-mark-yellow py-3 text-sm font-bold text-board-950 shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98]">
+          {tab === "login" ? "Войти" : "Создать аккаунт"}
+        </button>
+
+        <div className="mt-5 border-t border-dashed border-board-600/70 pt-4">
+          <p className="text-center text-[10.5px] font-bold uppercase tracking-[0.18em] text-chalk-500">демо-доступ в один клик</p>
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <button onClick={() => quick(SEED[0])} className="rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2.5 text-[12px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-green/50 hover:text-mark-green active:scale-[0.98]">
+              Артём · ученик
+            </button>
+            <button onClick={() => quick(SEED[1])} className="rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2.5 text-[12px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-[0.98]">
+              Даниил · преподаватель
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export { loadSession };
