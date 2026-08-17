@@ -1,0 +1,317 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ACHIEVEMENTS, INITIAL_ATTEMPTS, REAL_ANSWER_KEY, REAL_VARIANT, SCALE,
+  answersMatch, seedMistakes, todayShort,
+  type AttemptRecord, type MistakeGroup, type VariantTask,
+} from "./data";
+
+export interface ProductUser {
+  name: string; nickname: string; email: string; role: "student" | "teacher";
+  grade?: string; goal?: number; weakTopic?: string;
+  teacherCode?: string; teacherName?: string;
+  consentVersion?: string; consentAt?: string;
+}
+
+export type Route =
+  | "home" | "bank" | "variants" | "probability" | "run" | "results"
+  | "analytics" | "admin" | "rating" | "mistakes" | "achieve";
+
+export interface TopicStat { solved: number; attempts: number; }
+export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
+export interface Toast { id: number; msg: string; }
+
+const scoped = (key: string, scope: string) => `${key}@${scope}`;
+
+function read<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch { return fallback; }
+}
+function write(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ок */ }
+}
+
+export function loadSession(): ProductUser | null {
+  return read<ProductUser | null>("komi-session-v1", null);
+}
+export function saveSession(user: ProductUser | null) {
+  try {
+    if (user) localStorage.setItem("komi-session-v1", JSON.stringify(user));
+    else localStorage.removeItem("komi-session-v1");
+  } catch { /* ок */ }
+}
+
+interface AppState {
+  user: ProductUser | null;
+  scope: string;
+  route: Route;
+  attempts: AttemptRecord[];
+  mistakes: MistakeGroup[];
+  unlocked: Record<string, number>;
+  topicStats: Record<number, TopicStat>;
+  notifs: NotifItem[];
+  toasts: Toast[];
+  burst: number;
+  variantId: string;
+  lastResult: ExamResult | null;
+  nightOwl: boolean;
+  probBest: number;
+
+  go: (r: Route) => void;
+  login: (u: ProductUser) => void;
+  logout: () => void;
+  patchUser: (p: Partial<ProductUser>) => void;
+  pushToast: (msg: string) => void;
+  addNotif: (n: Omit<NotifItem, "id" | "time" | "read">) => void;
+  markAllRead: () => void;
+  startVariant: (id: string) => void;
+  submitExam: (answers: Record<number, string>, secondsSpent: number) => ExamResult;
+  toggleResolved: (number: number) => void;
+  recordAnswer: (taskNumber: number, correct: boolean) => void;
+  setProbBest: (pct: number) => void;
+  deleteAccount: () => void;
+  collectExport: () => Record<string, unknown>;
+}
+
+export interface ExamRow { number: number; given: string | null; reference: string; status: "correct" | "incorrect" | "skipped"; solution?: string; }
+export interface ExamResult {
+  variantTitle: string; rows: ExamRow[];
+  correct: number; incorrect: number; skipped: number;
+  primary: number; secondary: number; secondsSpent: number;
+}
+
+const Ctx = createContext<AppState | null>(null);
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<ProductUser | null>(loadSession);
+  const [route, setRoute] = useState<Route>("home");
+  const [variantId, setVariantId] = useState("v-real-2023");
+  const [lastResult, setLastResult] = useState<ExamResult | null>(null);
+  const [burst, setBurst] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const scope = user?.nickname ?? "guest";
+
+  const [attempts, setAttempts] = useState<AttemptRecord[]>([]);
+  const [mistakes, setMistakes] = useState<MistakeGroup[]>([]);
+  const [unlocked, setUnlocked] = useState<Record<string, number>>({});
+  const [topicStats, setTopicStats] = useState<Record<number, TopicStat>>({});
+  const [notifs, setNotifs] = useState<NotifItem[]>([]);
+  const [nightOwl, setNightOwl] = useState(false);
+  const [probBest, setProbBestState] = useState(0);
+  const justSwitched = useRef(false);
+
+  /* загрузка данных при смене пользователя — с демо-набором только для «artom» */
+  useEffect(() => {
+    justSwitched.current = true;
+    const s = scope;
+    const demo = s === "artom";
+    setAttempts(demo ? INITIAL_ATTEMPTS : read<AttemptRecord[]>(scoped("komi-attempts", s), []));
+    setMistakes(demo ? seedMistakes() : read<MistakeGroup[]>(scoped("komi-mistakes", s), []));
+    setUnlocked(demo ? { "first-variant": Date.now() - 6 * 86_400_000, threshold: Date.now() - 4 * 86_400_000, "streak-3": Date.now() - 3 * 86_400_000 } : read<Record<string, number>>(scoped("komi-achievements", s), {}));
+    setTopicStats(demo ? demoTopicStats() : read<Record<number, TopicStat>>(scoped("komi-topics", s), {}));
+    setNightOwl(read<boolean>(scoped("komi-nightowl", s), false));
+    setProbBestState(read<number>(scoped("komi-probbest", s), 0));
+    setNotifs(demo ? [
+      { id: 1, type: "achievement", title: "Серия — 6 дней!", body: "Ещё один день — и рекорд месяца по тренировкам будет вашим.", time: "2 ч назад", read: false },
+      { id: 2, type: "lesson", title: "Занятие завтра в 18:00", body: "Даниил разберёт №18 «Параметры». Подготовьте вопросы по графическому методу.", time: "5 ч назад", read: false },
+      { id: 3, type: "feed", title: "Анна обогнала вас в рейтинге", body: "Анна из Ухты набрала 96 баллов. Вы на 4-м месте в рейтинге недели.", time: "вчера", read: false },
+    ] : []);
+    setLastResult(null);
+  }, [scope]);
+
+  /* персист — только под ключом пользователя */
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-attempts", scope), attempts); }, [attempts, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-mistakes", scope), mistakes); }, [mistakes, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-achievements", scope), unlocked); }, [unlocked, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-topics", scope), topicStats); }, [topicStats, scope]);
+
+  const pushToast = useCallback((msg: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-2), { id, msg }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3400);
+  }, []);
+
+  const addNotif = useCallback((n: Omit<NotifItem, "id" | "time" | "read">) => {
+    setNotifs((prev) => [{ ...n, id: Date.now() + Math.random(), time: "только что", read: false }, ...prev].slice(0, 20));
+  }, []);
+
+  const bestScore = useMemo(() => (attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0), [attempts]);
+  const resolvedMistakes = useMemo(() => mistakes.filter((g) => g.resolved).length, [mistakes]);
+
+  const snapshot = useMemo(
+    () => ({ attempts: attempts.length, best: bestScore, streak: 6, resolvedMistakes, probBest, nightOwl }),
+    [attempts.length, bestScore, resolvedMistakes, probBest, nightOwl]
+  );
+
+  /* автопроверка достижений: конфетти + тост + уведомление */
+  useEffect(() => {
+    if (justSwitched.current) { justSwitched.current = false; return; }
+    const newly = ACHIEVEMENTS.filter((a) => unlocked[a.id] === undefined && a.test(snapshot));
+    if (!newly.length) return;
+    const now = Date.now();
+    setUnlocked((prev) => {
+      const next = { ...prev };
+      for (const a of newly) next[a.id] = now;
+      return next;
+    });
+    setBurst((b) => b + 1);
+    const title = newly.length === 1 ? `Ачивка разблокирована: «${newly[0].title}»` : `Разблокировано достижений: ${newly.length}`;
+    setTimeout(() => pushToast(title), 400);
+    addNotif({ type: "achievement", title, body: newly.map((a) => `«${a.title}»`).join(", ") });
+  }, [snapshot, unlocked, pushToast, addNotif]);
+
+  const go = useCallback((r: Route) => {
+    setRoute(r);
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, []);
+
+  const login = useCallback((u: ProductUser) => {
+    saveSession(u);
+    setUser(u);
+    pushToast(u.role === "teacher" ? `С возвращением, ${u.name.split(" ")[0]}! Кабинет открыт` : `Добро пожаловать, ${u.name.split(" ")[0]}!`);
+    if (u.role === "teacher") setRoute("admin");
+  }, [pushToast]);
+
+  const logout = useCallback(() => {
+    saveSession(null);
+    setUser(null);
+    setRoute("home");
+    pushToast("Вы вышли из аккаунта");
+  }, [pushToast]);
+
+  const patchUser = useCallback((p: Partial<ProductUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const merged = { ...prev, ...p };
+      saveSession(merged);
+      return merged;
+    });
+  }, []);
+
+  const startVariant = useCallback((id: string) => {
+    setVariantId(id);
+    setRoute("run");
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const submitExam = useCallback((answers: Record<string, string>, secondsSpent: number): ExamResult => {
+    const variant = { title: "Основной период", year: 2023 };
+    const rows: ExamRow[] = REAL_VARIANT.filter((t) => t.part === 1).map((t) => {
+      const ref = t.answer ?? REAL_ANSWER_KEY[t.number] ?? "";
+      const given = (answers[t.number] ?? "").trim() || null;
+      const status = given === null ? "skipped" : answersMatch(given, ref) ? "correct" : "incorrect";
+      return { number: t.number, given, reference: ref, status, solution: t.solution };
+    });
+    const correct = rows.filter((r) => r.status === "correct").length;
+    const incorrect = rows.filter((r) => r.status === "incorrect").length;
+    const skipped = rows.filter((r) => r.status === "skipped").length;
+    const primary = correct;
+    const secondary = SCALE[primary] ?? 0;
+    const variantLabel = `${variant.title} ${variant.year}`;
+
+    /* ошибки — в журнал */
+    const topicByNumber = new Map(REAL_VARIANT.map((t) => [t.number, t.category]));
+    const wrong = rows.filter((r) => r.status !== "correct");
+    if (wrong.length) {
+      setMistakes((prev) => wrong.reduce((acc, r) => recordMistake(acc, r.number, topicByNumber.get(r.number) ?? `Задание ${r.number}`, r.given, r.reference, variantLabel), prev));
+      addNotif({ type: "system", title: `В журнале ошибок: +${wrong.length}`, body: `«${variantLabel}» — ${todayShort()}. Разбор ошибок даёт +6 баллов за месяц.` });
+    }
+    /* статистика тем */
+    setTopicStats((prev) => {
+      const next = { ...prev };
+      for (const r of rows) {
+        const cur = next[r.number] ?? { solved: 0, attempts: 0 };
+        next[r.number] = { solved: cur.solved + (r.status === "correct" ? 1 : 0), attempts: cur.attempts + 1 };
+      }
+      return next;
+    });
+    /* ночная сова */
+    const h = new Date().getHours();
+    if (h >= 22 || h < 5) { setNightOwl(true); write(scoped("komi-nightowl", scope), true); }
+
+    const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort() };
+    const bestBefore = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
+    setAttempts((a) => [...a, newAttempt]);
+    if (secondary > bestBefore) {
+      setTimeout(() => pushToast(`Новый личный рекорд: ${secondary} тестовых баллов!`), 700);
+      addNotif({ type: "achievement", title: `Новый рекорд: ${secondary} баллов`, body: `Вы превзошли предыдущий лучший результат (${bestBefore}).` });
+    }
+
+    const result: ExamResult = { variantTitle: variantLabel, rows, correct, incorrect, skipped, primary, secondary, secondsSpent };
+    setLastResult(result);
+    setRoute("results");
+    window.scrollTo({ top: 0 });
+    return result;
+  }, [attempts, scope, pushToast, addNotif]);
+
+  const toggleResolved = useCallback((number: number) => {
+    setMistakes((prev) => prev.map((g) => (g.number === number ? { ...g, resolved: !g.resolved } : g)));
+  }, []);
+
+  const recordAnswer = useCallback((taskNumber: number, correct: boolean) => {
+    setTopicStats((prev) => {
+      const cur = prev[taskNumber] ?? { solved: 0, attempts: 0 };
+      return { ...prev, [taskNumber]: { solved: cur.solved + (correct ? 1 : 0), attempts: cur.attempts + 1 } };
+    });
+  }, []);
+
+  const setProbBest = useCallback((pct: number) => {
+    setProbBestState((prev) => {
+      const next = Math.max(prev, pct);
+      write(scoped("komi-probbest", scope), next);
+      return next;
+    });
+  }, [scope]);
+
+  const collectExport = useCallback(() => ({
+    exportedAt: new Date().toISOString(), profile: user, attempts, mistakes, topicStats, achievements: unlocked, probBest,
+  }), [user, attempts, mistakes, topicStats, unlocked, probBest]);
+
+  const deleteAccount = useCallback(() => {
+    const s = scope;
+    try {
+      ["komi-attempts", "komi-mistakes", "komi-achievements", "komi-topics", "komi-probbest", "komi-nightowl"].forEach((k) => localStorage.removeItem(scoped(k, s)));
+      const users = read<(ProductUser & { password: string })[]>("komi-users-v1", []);
+      if (user) write("komi-users-v1", users.filter((u) => u.email !== user.email));
+    } catch { /* ок */ }
+    saveSession(null);
+    setUser(null);
+    setRoute("home");
+    pushToast("Аккаунт и все данные удалены");
+  }, [scope, user, pushToast]);
+
+  const value: AppState = {
+    user, scope, route, attempts, mistakes, unlocked, topicStats, notifs, toasts, burst,
+    variantId, lastResult, nightOwl, probBest,
+    go, login, logout, patchUser, pushToast, addNotif,
+    markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
+    startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useApp(): AppState {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useApp вне AppProvider");
+  return ctx;
+}
+
+function recordMistake(groups: MistakeGroup[], number: number, topic: string, given: string | null, reference: string, variant: string): MistakeGroup[] {
+  const occ = { given, reference, variant, date: todayShort() };
+  const existing = groups.find((g) => g.number === number);
+  if (existing) return groups.map((g) => (g.number === number ? { ...g, resolved: false, occurrences: [occ, ...g.occurrences].slice(0, 6) } : g));
+  return [{ number, topic, resolved: false, occurrences: [occ] }, ...groups];
+}
+
+function demoTopicStats(): Record<number, TopicStat> {
+  const out: Record<number, TopicStat> = {};
+  const demo: [number, number, number][] = [
+    [1, 19, 20], [2, 18, 20], [3, 17, 20], [4, 15, 20], [5, 16, 20], [6, 12, 20],
+    [7, 14, 20], [8, 11, 20], [9, 10, 20], [10, 8, 20], [11, 17, 20], [12, 18, 20],
+  ];
+  for (const [n, solved, attempts] of demo) out[n] = { solved, attempts };
+  return out;
+}
