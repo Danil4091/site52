@@ -1,5 +1,39 @@
+# ─────────── зависимости и сборка ───────────
 node_modules/
-.next/
 dist/
-build/
+dist-ssr/
+*.local
+
+# ─────────── секреты (НЕ коммитить!) ───────────
+.env
+.env.local
+.env.production
+backend/.env
+
+# ─────────── Python ───────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ─────────── окружение и редакторы ───────────
+.DS_Store
+Thumbs.db
 *.log
+npm-debug.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# ─────────── база данных и данные ───────────
+*.db
+*.sqlite3
+backend/backups/
+backend/uploads/
+.next/
+build/
