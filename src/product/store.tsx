@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   ACHIEVEMENTS, INITIAL_ATTEMPTS, REAL_ANSWER_KEY, REAL_VARIANT, SCALE,
   answersMatch, seedMistakes, todayShort,
-  type AttemptRecord, type MistakeGroup, type VariantTask,
+  type AttemptRecord, type MistakeGroup,
 } from "./data";
 
 export interface ProductUser {
@@ -10,6 +10,8 @@ export interface ProductUser {
   grade?: string; goal?: number; weakTopic?: string;
   teacherCode?: string; teacherName?: string;
   consentVersion?: string; consentAt?: string;
+  /** Для будущего Telegram-бота: напоминания о стриках, мини-тесты. */
+  telegram_id?: string;
 }
 
 export type Route =
@@ -20,7 +22,29 @@ export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
 export interface Toast { id: number; msg: string; }
 
+/* Задача банка — формат совпадает с API и JSON-импортом. */
+export interface CustomTask {
+  id: string;
+  exam_type: "ege" | "oge";
+  task_number: number;
+  topic: string;
+  condition_text: string;
+  solution_text?: string;
+  correct_answer?: string | null;
+  is_second_part: boolean;
+  difficulty_level: number;
+  source?: string;
+  createdAt: string;
+}
+
 const scoped = (key: string, scope: string) => `${key}@${scope}`;
+const dayIso = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const yesterdayIso = () => { const d = new Date(); d.setDate(d.getDate() - 1); return dayIso(d); };
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -42,6 +66,8 @@ export function saveSession(user: ProductUser | null) {
   } catch { /* ок */ }
 }
 
+interface StreakState { days: number; best: number; last: string; xp: number; }
+
 interface AppState {
   user: ProductUser | null;
   scope: string;
@@ -58,6 +84,11 @@ interface AppState {
   nightOwl: boolean;
   probBest: number;
 
+  /* геймификация и удержание */
+  streak: StreakState;
+  todaySolved: boolean;
+  taskBank: CustomTask[];
+
   go: (r: Route) => void;
   login: (u: ProductUser) => void;
   logout: () => void;
@@ -72,6 +103,11 @@ interface AppState {
   setProbBest: (pct: number) => void;
   deleteAccount: () => void;
   collectExport: () => Record<string, unknown>;
+
+  /* банк задач (админка) */
+  addTask: (t: Omit<CustomTask, "id" | "createdAt">) => CustomTask;
+  removeTask: (id: string) => void;
+  importTasks: (list: CustomTask[]) => { added: number; skipped: number };
 }
 
 export interface ExamRow { number: number; given: string | null; reference: string; status: "correct" | "incorrect" | "skipped"; solution?: string; }
@@ -82,6 +118,8 @@ export interface ExamResult {
 }
 
 const Ctx = createContext<AppState | null>(null);
+
+const TASKBANK_KEY = "komi-taskbank-v1";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<ProductUser | null>(loadSession);
@@ -100,9 +138,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notifs, setNotifs] = useState<NotifItem[]>([]);
   const [nightOwl, setNightOwl] = useState(false);
   const [probBest, setProbBestState] = useState(0);
+  const [streak, setStreak] = useState<StreakState>({ days: 0, best: 0, last: "", xp: 0 });
+  const [taskBank, setTaskBank] = useState<CustomTask[]>(() => read<CustomTask[]>(TASKBANK_KEY, []));
   const justSwitched = useRef(false);
 
-  /* загрузка данных при смене пользователя — с демо-набором только для «artom» */
+  /* загрузка данных при смене пользователя — демо-набор только у «artom» */
   useEffect(() => {
     justSwitched.current = true;
     const s = scope;
@@ -113,6 +153,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTopicStats(demo ? demoTopicStats() : read<Record<number, TopicStat>>(scoped("komi-topics", s), {}));
     setNightOwl(read<boolean>(scoped("komi-nightowl", s), false));
     setProbBestState(read<number>(scoped("komi-probbest", s), 0));
+    /* стрик: если последняя задача решалась раньше вчера — серия сгорела */
+    const st = read<StreakState>(scoped("komi-streak", s), { days: 0, best: 0, last: "", xp: 0 });
+    if (st.last && st.last !== dayIso() && st.last !== yesterdayIso()) st.days = 0;
+    if (demo && !st.last) { const d = { days: 6, best: 9, last: dayIso(), xp: 430 }; setStreak(d); }
+    else setStreak(st);
     setNotifs(demo ? [
       { id: 1, type: "achievement", title: "Серия — 6 дней!", body: "Ещё один день — и рекорд месяца по тренировкам будет вашим.", time: "2 ч назад", read: false },
       { id: 2, type: "lesson", title: "Занятие завтра в 18:00", body: "Даниил разберёт №18 «Параметры». Подготовьте вопросы по графическому методу.", time: "5 ч назад", read: false },
@@ -126,6 +171,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (scope !== "guest") write(scoped("komi-mistakes", scope), mistakes); }, [mistakes, scope]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-achievements", scope), unlocked); }, [unlocked, scope]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-topics", scope), topicStats); }, [topicStats, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-streak", scope), streak); }, [streak, scope]);
+  useEffect(() => { write(TASKBANK_KEY, taskBank); }, [taskBank]);
 
   const pushToast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -137,12 +184,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNotifs((prev) => [{ ...n, id: Date.now() + Math.random(), time: "только что", read: false }, ...prev].slice(0, 20));
   }, []);
 
+  /* решена хотя бы одна задача за сутки → +1 день серии (один раз в день), +XP */
+  const registerSolve = useCallback(() => {
+    const today = dayIso();
+    setStreak((s) => {
+      const sameDay = s.last === today;
+      const cont = s.last === yesterdayIso();
+      const days = sameDay ? s.days : cont ? s.days + 1 : 1;
+      const xp = s.xp + 10 + (sameDay ? 0 : 15);
+      return { days, best: Math.max(s.best, days), last: today, xp };
+    });
+  }, []);
+
   const bestScore = useMemo(() => (attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0), [attempts]);
   const resolvedMistakes = useMemo(() => mistakes.filter((g) => g.resolved).length, [mistakes]);
 
   const snapshot = useMemo(
-    () => ({ attempts: attempts.length, best: bestScore, streak: 6, resolvedMistakes, probBest, nightOwl }),
-    [attempts.length, bestScore, resolvedMistakes, probBest, nightOwl]
+    () => ({ attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes, probBest, nightOwl }),
+    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl]
   );
 
   /* автопроверка достижений: конфетти + тост + уведомление */
@@ -211,14 +270,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const secondary = SCALE[primary] ?? 0;
     const variantLabel = `${variant.title} ${variant.year}`;
 
-    /* ошибки — в журнал */
     const topicByNumber = new Map(REAL_VARIANT.map((t) => [t.number, t.category]));
     const wrong = rows.filter((r) => r.status !== "correct");
     if (wrong.length) {
       setMistakes((prev) => wrong.reduce((acc, r) => recordMistake(acc, r.number, topicByNumber.get(r.number) ?? `Задание ${r.number}`, r.given, r.reference, variantLabel), prev));
       addNotif({ type: "system", title: `В журнале ошибок: +${wrong.length}`, body: `«${variantLabel}» — ${todayShort()}. Разбор ошибок даёт +6 баллов за месяц.` });
     }
-    /* статистика тем */
     setTopicStats((prev) => {
       const next = { ...prev };
       for (const r of rows) {
@@ -227,9 +284,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-    /* ночная сова */
     const h = new Date().getHours();
     if (h >= 22 || h < 5) { setNightOwl(true); write(scoped("komi-nightowl", scope), true); }
+
+    registerSolve();
 
     const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort() };
     const bestBefore = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
@@ -244,7 +302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRoute("results");
     window.scrollTo({ top: 0 });
     return result;
-  }, [attempts, scope, pushToast, addNotif]);
+  }, [attempts, scope, pushToast, addNotif, registerSolve]);
 
   const toggleResolved = useCallback((number: number) => {
     setMistakes((prev) => prev.map((g) => (g.number === number ? { ...g, resolved: !g.resolved } : g)));
@@ -255,7 +313,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cur = prev[taskNumber] ?? { solved: 0, attempts: 0 };
       return { ...prev, [taskNumber]: { solved: cur.solved + (correct ? 1 : 0), attempts: cur.attempts + 1 } };
     });
-  }, []);
+    registerSolve();
+  }, [registerSolve]);
 
   const setProbBest = useCallback((pct: number) => {
     setProbBestState((prev) => {
@@ -266,13 +325,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [scope]);
 
   const collectExport = useCallback(() => ({
-    exportedAt: new Date().toISOString(), profile: user, attempts, mistakes, topicStats, achievements: unlocked, probBest,
-  }), [user, attempts, mistakes, topicStats, unlocked, probBest]);
+    exportedAt: new Date().toISOString(), profile: user, attempts, mistakes, topicStats,
+    achievements: unlocked, probBest, streak, telegram_id: user?.telegram_id ?? null,
+  }), [user, attempts, mistakes, topicStats, unlocked, probBest, streak]);
 
   const deleteAccount = useCallback(() => {
     const s = scope;
     try {
-      ["komi-attempts", "komi-mistakes", "komi-achievements", "komi-topics", "komi-probbest", "komi-nightowl"].forEach((k) => localStorage.removeItem(scoped(k, s)));
+      ["komi-attempts", "komi-mistakes", "komi-achievements", "komi-topics", "komi-probbest", "komi-nightowl", "komi-streak"].forEach((k) => localStorage.removeItem(scoped(k, s)));
       const users = read<(ProductUser & { password: string })[]>("komi-users-v1", []);
       if (user) write("komi-users-v1", users.filter((u) => u.email !== user.email));
     } catch { /* ок */ }
@@ -282,12 +342,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     pushToast("Аккаунт и все данные удалены");
   }, [scope, user, pushToast]);
 
+  /* ── банк задач (общий, управляется преподавателем) ── */
+  const addTask = useCallback((t: Omit<CustomTask, "id" | "createdAt">): CustomTask => {
+    const full: CustomTask = { ...t, id: `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date().toISOString() };
+    setTaskBank((prev) => [full, ...prev]);
+    return full;
+  }, []);
+
+  const removeTask = useCallback((id: string) => {
+    setTaskBank((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const importTasks = useCallback((list: CustomTask[]) => {
+    let added = 0, skipped = 0;
+    setTaskBank((prev) => {
+      const next = [...prev];
+      for (const t of list) {
+        const dup = next.some((x) => x.exam_type === t.exam_type && x.task_number === t.task_number && x.condition_text.trim() === t.condition_text.trim());
+        if (dup) { skipped++; continue; }
+        next.unshift(t);
+        added++;
+      }
+      return next;
+    });
+    return { added, skipped };
+  }, []);
+
+  const todaySolved = streak.last === dayIso();
+
   const value: AppState = {
     user, scope, route, attempts, mistakes, unlocked, topicStats, notifs, toasts, burst,
     variantId, lastResult, nightOwl, probBest,
+    streak, todaySolved, taskBank,
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,
+    addTask, removeTask, importTasks,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -311,6 +401,7 @@ function demoTopicStats(): Record<number, TopicStat> {
   const demo: [number, number, number][] = [
     [1, 19, 20], [2, 18, 20], [3, 17, 20], [4, 15, 20], [5, 16, 20], [6, 12, 20],
     [7, 14, 20], [8, 11, 20], [9, 10, 20], [10, 8, 20], [11, 17, 20], [12, 18, 20],
+    [13, 7, 10], [14, 5, 9], [15, 4, 9], [16, 3, 8], [17, 5, 9], [18, 2, 8], [19, 4, 8],
   ];
   for (const [n, solved, attempts] of demo) out[n] = { solved, attempts };
   return out;

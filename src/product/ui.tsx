@@ -1,80 +1,195 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { X } from "lucide-react";
+import { Check, Delete, Eraser, Flame, Minus } from "lucide-react";
 
-/* ─────────────── LaTeX + markdown-картинки ─────────────── */
-type Part = { kind: "text" | "tex" | "img"; value: string; alt?: string };
-function parse(text: string): Part[] {
+/* ═══════════════════════ LaTeX-рендеринг ═══════════════════════
+   Принимает строку из базы/API и рендерит:
+     $$…$$  — блочные формулы (displayMode, центрируются)
+     $…$ и \(…\) — строчные
+   Всё остальное остаётся обычным текстом. Ошибки LaTeX не валят страницу. */
+
+type Part = { kind: "text" | "tex" | "block"; value: string };
+
+function parseTex(text: string): Part[] {
   const out: Part[] = [];
-  const re = /\$\$([\s\S]+?)\$\$|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$|!\[([^\]]*)\]\(([^)\s]+)\)/g;
+  const re = /\$\$([\s\S]+?)\$\$|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) out.push({ kind: "text", value: text.slice(last, m.index) });
-    if (m[5] !== undefined) out.push({ kind: "img", value: m[5], alt: m[4] || "Чертёж" });
-    else out.push({ kind: "tex", value: m[1] ?? m[2] ?? m[3] ?? "" });
+    if (m[1] !== undefined) out.push({ kind: "block", value: m[1] });
+    else out.push({ kind: "tex", value: m[2] ?? m[3] ?? "" });
     last = m.index + m[0].length;
   }
   if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
   return out;
 }
 
-export function isImageRef(s: string): boolean {
-  return /^(https?:\/\/|image\/)/i.test(s);
-}
-
-let zoomSetter: ((src: string | null) => void) | null = null;
-
-export function TaskImage({ src, alt }: { src: string; alt: string }) {
-  const [broken, setBroken] = useState(false);
-  if (broken || !isImageRef(src)) {
-    return <span className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-chalk-600/40 bg-board-800/40 px-3 py-2.5 text-[11.5px] font-medium text-chalk-500">Чертёж недоступен</span>;
-  }
-  return (
-    <button type="button" onClick={() => zoomSetter?.(src)} className="group mt-3 block max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-board-600/50 bg-board-850 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-mark-yellow/60 hover:shadow-lg" title="Нажмите, чтобы увеличить">
-      <img src={src} alt={alt} loading="lazy" onError={() => setBroken(true)} className="max-h-72 w-auto max-w-full bg-white object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
-    </button>
-  );
-}
-
-function ZoomOverlay() {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    zoomSetter = setSrc;
-    return () => { zoomSetter = null; };
-  }, []);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSrc(null);
-    if (src) window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [src]);
-  if (!src) return null;
-  return (
-    <div className="pop-in fixed inset-0 z-[80] flex cursor-zoom-out items-center justify-center bg-board-950/90 p-4 backdrop-blur-sm" onClick={() => setSrc(null)} role="dialog" aria-label="Увеличенный чертёж">
-      <img src={src} alt="Чертёж крупно" className="max-h-[92vh] max-w-[95vw] rounded-xl bg-white object-contain p-2 shadow-2xl" />
-      <span className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-board-800 text-chalk-200"><X className="h-5 w-5" /></span>
-    </div>
-  );
+function Tex({ tex, block }: { tex: string; block?: boolean }) {
+  const html = katex.renderToString(tex, { displayMode: !!block, throwOnError: false, errorColor: "#ff7a6b" });
+  return <span className={block ? "my-2 block overflow-x-auto" : undefined} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 export function LatexText({ text, className }: { text: string; className?: string }) {
-  const parts = useMemo(() => parse(text), [text]);
+  const parts = parseTex(text);
   return (
     <span className={className}>
-      <ZoomOverlay />
-      {parts.map((p, i) => {
-        if (p.kind === "img") return <TaskImage key={i} src={p.value} alt={p.alt ?? "Чертёж"} />;
-        if (p.kind === "tex") {
-          return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(p.value, { throwOnError: false, errorColor: "#ff8b6a" }) }} />;
-        }
-        return <span key={i}>{p.value}</span>;
-      })}
+      {parts.map((p, i) =>
+        p.kind === "text" ? <span key={i}>{p.value}</span> : <Tex key={i} tex={p.value} block={p.kind === "block"} />
+      )}
     </span>
   );
 }
 
-/* ─────────────── конфетти (canvas, без зависимостей) ─────────────── */
+/* ═══════════════════════ изображения задач ═══════════════════════ */
+export function isImageRef(s: string): boolean {
+  return /^https?:\/\//i.test(s) || /^image\/(png|jpe?g|webp|svg\+xml|gif);base64,/i.test(s);
+}
+
+export function TaskImage({ src, alt }: { src: string; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  const [zoom, setZoom] = useState(false);
+  if (broken || !isImageRef(src)) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setZoom(true)}
+        className="group mt-3 block max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-board-700/70 bg-board-950/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-mark-blue/50"
+        title="Нажмите, чтобы увеличить">
+        <img src={src} alt={alt} loading="lazy" onError={() => setBroken(true)}
+          className="max-h-72 w-auto max-w-full bg-white object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
+      </button>
+      {zoom && (
+        <div className="pop-in fixed inset-0 z-[80] flex cursor-zoom-out items-center justify-center bg-board-950/85 p-4 backdrop-blur-sm" onClick={() => setZoom(false)}>
+          <img src={src} alt={alt} className="max-h-[92vh] max-w-[95vw] rounded-xl bg-white object-contain p-2 shadow-2xl" />
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════ ввод ответа ═══════════════════════
+   Ответы ЕГЭ — целые или конечные десятичные дроби: только цифры,
+   «-», запятая и точка. Всё остальное отбрасывается на вводе. */
+export function sanitizeAnswer(s: string): string {
+  return s.replace(/[^0-9.,-]/g, "").replace(/(?!^)-/g, "");
+}
+
+const KEYS: { k: string; kind?: "fn" | "ok" | "danger" }[] = [
+  { k: "7" }, { k: "8" }, { k: "9" }, { k: "back", kind: "fn" },
+  { k: "4" }, { k: "5" }, { k: "6" }, { k: "-", kind: "fn" },
+  { k: "1" }, { k: "2" }, { k: "3" }, { k: ",", kind: "fn" },
+  { k: "0" }, { k: "." }, { k: "clear", kind: "danger" }, { k: "ok", kind: "ok" },
+];
+
+/** Экранная цифровая клавиатура — на смартфонах инпут не «уезжает». */
+export function Numpad({ value, onChange, onSubmit, className = "" }: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit?: () => void;
+  className?: string;
+}) {
+  const press = (k: string) => {
+    if (k === "back") return onChange(value.slice(0, -1));
+    if (k === "clear") return onChange("");
+    if (k === "ok") return onSubmit?.();
+    onChange(sanitizeAnswer(value + k));
+  };
+  return (
+    <div className={`grid grid-cols-4 gap-1.5 ${className}`} role="group" aria-label="Цифровая клавиатура">
+      {KEYS.map(({ k, kind }) => (
+        <button key={k} type="button" onClick={() => press(k)}
+          className={`numpad-key flex items-center justify-center ${
+            kind === "ok" ? "!bg-mark-green !text-board-950 hover:!bg-mark-green" :
+            kind === "danger" ? "!text-mark-red" :
+            kind === "fn" ? "!text-mark-yellow" : ""
+          }`}
+          aria-label={k === "back" ? "Стереть символ" : k === "clear" ? "Очистить" : k === "ok" ? "Готово" : k}>
+          {k === "back" ? <Delete className="h-5 w-5" /> :
+           k === "clear" ? <Eraser className="h-5 w-5" /> :
+           k === "ok" ? <Check className="h-5 w-5" /> :
+           k === "-" ? <Minus className="h-4 w-4" /> : k}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════ тепловая карта №1–19 ═══════════════════════ */
+export function heatColor(solved: number, attempts: number): { bg: string; fg: string; label: string } {
+  if (attempts === 0) return { bg: "transparent", fg: "var(--color-chalk-500)", label: "нет попыток" };
+  const r = (solved / attempts) * 100;
+  if (r >= 80) return { bg: "color-mix(in srgb, var(--color-mark-green) 22%, transparent)", fg: "var(--color-mark-green)", label: `${Math.round(r)}%` };
+  if (r >= 50) return { bg: "color-mix(in srgb, var(--color-mark-yellow) 20%, transparent)", fg: "var(--color-mark-yellow)", label: `${Math.round(r)}%` };
+  return { bg: "color-mix(in srgb, var(--color-mark-red) 22%, transparent)", fg: "var(--color-mark-red)", label: `${Math.round(r)}%` };
+}
+
+export function Heatmap({ stats, className = "" }: {
+  stats: Record<number, { solved: number; attempts: number }>;
+  className?: string;
+}) {
+  const cell = (n: number) => {
+    const s = stats[n] ?? { solved: 0, attempts: 0 };
+    const h = heatColor(s.solved, s.attempts);
+    return (
+      <div key={n} title={`№${n} · решено ${s.solved} из ${s.attempts}`}
+        className={`card-hover flex h-12 flex-col items-center justify-center rounded-lg border sm:h-14 ${s.attempts === 0 ? "border-dashed border-board-600/70" : "border-board-700/60"}`}
+        style={{ background: h.bg }}>
+        <span className="font-display text-[13px] font-bold leading-none" style={{ color: s.attempts ? h.fg : "var(--color-chalk-500)" }}>{n}</span>
+        <span className="mt-0.5 font-mono text-[9px] font-semibold" style={{ color: s.attempts ? h.fg : "var(--color-chalk-600)" }}>{h.label}</span>
+      </div>
+    );
+  };
+  return (
+    <div className={className}>
+      <p className="tick mb-2">Часть 1 · №1–12</p>
+      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">{Array.from({ length: 12 }, (_, i) => cell(i + 1))}</div>
+      <p className="tick mb-2 mt-4">Часть 2 · №13–19</p>
+      <div className="grid grid-cols-7 gap-1.5">{Array.from({ length: 7 }, (_, i) => cell(i + 13))}</div>
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[10.5px] font-semibold text-chalk-500">
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-green)" }} /> ≥ 80%</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-yellow)" }} /> 50–79%</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-red)" }} /> &lt; 50%</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-chalk-600" /> не решали</span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════ XP / уровень / стрик ═══════════════════════ */
+export const levelFromXp = (xp: number) => Math.floor(xp / 100) + 1;
+
+export function XpBar({ xp, className = "" }: { xp: number; className?: string }) {
+  const level = levelFromXp(xp);
+  const prog = xp % 100;
+  return (
+    <div className={className}>
+      <div className="flex items-baseline justify-between">
+        <span className="font-display text-[13px] font-bold text-mark-yellow">LVL {level}</span>
+        <span className="font-mono text-[11px] font-semibold tabular-nums text-chalk-400">{prog} / 100 XP</span>
+      </div>
+      <div className="xp-track mt-1.5">
+        <div className="xp-fill" style={{ width: `${prog}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function StreakFlame({ days, active, className = "" }: { days: number; active: boolean; className?: string }) {
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <Flame className={`h-6 w-6 ${days > 0 ? (active ? "flame-live text-mark-red" : "text-mark-red/80") : "text-chalk-600"}`} />
+      <div>
+        <p key={days} className="count-pop font-display text-xl font-bold leading-none tabular-nums text-chalk-50">{days}</p>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-chalk-500">
+          {active ? "дней · сегодня ✓" : "дней подряд"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════ конфетти ═══════════════════════ */
 export function ConfettiBurst({ burst }: { burst: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const prev = useRef(0);
@@ -90,7 +205,7 @@ export function ConfettiBurst({ burst }: { burst: number }) {
     const H = (canvas.height = window.innerHeight * dpr);
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
-    const COLORS = ["#f2c14e", "#a8d5a2", "#8fd0e8", "#efa9c9", "#ff8b6a", "#f5f1e4"];
+    const COLORS = ["#ffc94d", "#5ee6a8", "#6bd5ff", "#ff9ecb", "#ff7a6b", "#f2f5fc"];
     interface P { x: number; y: number; vx: number; vy: number; w: number; h: number; rot: number; vr: number; color: string; life: number; }
     const parts: P[] = [];
     const cannon = (x: number, dir: number) => {
@@ -128,15 +243,15 @@ export function ConfettiBurst({ burst }: { burst: number }) {
   return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-[70]" aria-hidden="true" />;
 }
 
-/* ─────────────── аватар ─────────────── */
+/* ═══════════════════════ аватар и спарклайн ═══════════════════════ */
 const AVATAR_COLORS = ["bg-mark-yellow text-board-950", "bg-mark-green text-board-950", "bg-mark-blue text-board-950", "bg-mark-pink text-board-950", "bg-mark-red text-board-950", "bg-board-600 text-chalk-50"];
+
 export function Avatar({ name, className = "h-9 w-9 text-[11px]" }: { name: string; className?: string }) {
   const color = AVATAR_COLORS[name.length % AVATAR_COLORS.length];
   const init = name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   return <span className={`flex shrink-0 items-center justify-center rounded-full font-bold ${color} ${className}`}>{init}</span>;
 }
 
-/* ─────────────── спарклайн (SVG) ─────────────── */
 export function Sparkline({ values, width = 160, height = 44 }: { values: number[]; width?: number; height?: number }) {
   if (values.length < 2) return null;
   const min = Math.min(...values), max = Math.max(...values);
@@ -146,10 +261,11 @@ export function Sparkline({ values, width = 160, height = 44 }: { values: number
     const y = height - 6 - ((v - min) / range) * (height - 12);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
+  const [lx, ly] = pts[pts.length - 1].split(",");
   return (
     <svg width={width} height={height} className="overflow-visible" aria-hidden="true">
       <polyline points={pts.join(" ")} fill="none" stroke="var(--color-mark-yellow)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]} r="3.5" fill="var(--color-mark-yellow)" />
+      <circle cx={lx} cy={ly} r="3.5" fill="var(--color-mark-yellow)" />
     </svg>
   );
 }
