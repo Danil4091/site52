@@ -197,7 +197,7 @@ export function AnalyticsPage() {
 export function RatingPage() {
   const {
     attempts, mistakes, unlocked, probBest, nightOwl, streak, topicStats, user,
-    marathonCount, marathonBest, referrals, tagsAssigned,
+    marathonCount, marathonBest, referrals, tagsAssigned, freezesBought,
   } = useApp();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
   const solvedTasks = Object.values(topicStats).reduce((s, t) => s + t.solved, 0);
@@ -212,6 +212,7 @@ export function RatingPage() {
     marathonCount, marathonBest, referrals: referrals.length, tagsAssigned,
     weeklyVariants: attempts.filter((a) => a.ts !== undefined && a.ts >= weekAgo).length,
     goalReached: user?.goal !== undefined ? best >= user.goal : false,
+    freezesBought,
   };
 
   const top = [...LEADER_SEED].sort((a, b) => b.score - a.score);

@@ -4,7 +4,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Brain, CalendarCheck, ClipboardList, Crown, Crosshair, Eraser, Flag, Flame, Footprints,
-  Gauge, Gift, Medal, Moon, Rocket, Star, Tags, Target, Timer, TrendingUp, Users, Zap,
+  Gauge, Gift, Medal, Moon, Rocket, Snowflake, Star, Tags, Target, Timer, TrendingUp, Users, Zap,
 } from "lucide-react";
 import { EGE_DATE } from "./config";
 
