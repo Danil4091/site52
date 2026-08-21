@@ -21,6 +21,10 @@ export const EGE_DATE_LABEL: string = EGE_DATE.toLocaleDateString("ru-RU", {
 /** Пометка рядом со счётчиком. */
 export const EGE_DATE_NOTE = "Дата предварительная (уточняется ФИПИ)";
 
+/* ── Средний тестовый балл по РФ (профильная математика, 2026) ──
+   Отображается на графике аналитики для сравнения с результатом ученика. */
+export const RU_AVG_SCORE_2026: number = Number(env.VITE_RU_AVG_SCORE) || 64;
+
 /* ── Ссылка на группу ВК (задача: VITE_VK_GROUP_URL) ── */
 export const VK_GROUP_URL: string = env.VITE_VK_GROUP_URL ?? "https://vk.com/repetitor_iz_komi";
 

@@ -69,33 +69,70 @@ function CardBody({ onCollapse }: { onCollapse?: () => void }) {
   );
 }
 
+const DISMISS_KEY = "komi-vk-widget-dismissed";
+
 export default function VkContactWidget() {
+  /* «скрыт на сессию» — крестик реально закрывает баннер */
+  const [hidden, setHidden] = useState(() => sessionStorage.getItem(DISMISS_KEY) === "1");
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const dismiss = () => {
+    setHidden(true);
+    setMobileOpen(false);
+    try { sessionStorage.setItem(DISMISS_KEY, "1"); } catch { /* ок */ }
+  };
+  const restore = () => {
+    setHidden(false);
+    try { sessionStorage.removeItem(DISMISS_KEY); } catch { /* ок */ }
+  };
+
+  if (hidden) {
+    /* компактная «точка возврата», чтобы баннер не терялся навсегда */
+    return (
+      <button
+        onClick={restore}
+        className="fixed bottom-20 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#0077FF] text-white shadow-2xl shadow-[#0077FF]/30 transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 active:scale-95 md:bottom-6"
+        aria-label="Показать виджет «Написать в VK»"
+        title="Написать репетитору в VK"
+      >
+        <MessageCircle className="h-5 w-5" />
+      </button>
+    );
+  }
 
   return (
     <>
-      {/* Десктоп: липкий сайдбар справа */}
+      {/* Десктоп: липкий сайдбар справа, крестик закрывает баннер */}
       <div className="pointer-events-none fixed right-5 top-24 z-30 hidden w-72 xl:block">
         <div className="pointer-events-auto sticky top-24">
-          <CardBody />
+          <CardBody onCollapse={dismiss} />
         </div>
       </div>
 
-      {/* Мобильные: плашка внизу, раскрывается в карточку */}
+      {/* Мобильные: плашка внизу, раскрывается в карточку; крестик сворачивает обратно */}
       <div className="fixed inset-x-3 bottom-20 z-40 md:bottom-6 xl:hidden">
         {mobileOpen ? (
           <div className="pop-in">
             <CardBody onCollapse={() => setMobileOpen(false)} />
           </div>
         ) : (
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-board-600/60 bg-board-850/95 py-3 text-[13px] font-bold text-chalk-100 shadow-2xl backdrop-blur transition-all duration-200 hover:border-mark-yellow/50 active:scale-[0.98]"
-          >
-            <MessageCircle className="h-4 w-4 text-[#0077FF]" />
-            Написать репетитору в VK
-            <ChevronDown className="h-4 w-4 rotate-180 text-chalk-500" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-full border border-board-600/60 bg-board-850/95 py-3 text-[13px] font-bold text-chalk-100 shadow-2xl backdrop-blur transition-all duration-200 hover:border-mark-yellow/50 active:scale-[0.98]"
+            >
+              <MessageCircle className="h-4 w-4 text-[#0077FF]" />
+              Написать репетитору в VK
+              <ChevronDown className="h-4 w-4 rotate-180 text-chalk-500" />
+            </button>
+            <button
+              onClick={dismiss}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-board-600/60 bg-board-850/95 text-chalk-400 shadow-2xl backdrop-blur transition-colors hover:text-chalk-50 active:scale-95"
+              aria-label="Скрыть виджет"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
     </>

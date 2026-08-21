@@ -64,7 +64,7 @@ export default function VariantUploader() {
     }
     setErrors([]);
     setParsed(res.variant);
-    pushToast(`Вариант распознан: ${res.variant.tasks.length} задач`);
+    pushToast(`«${res.variant.variantTitle}» · ${res.variant.tasks.length} задач`);
   }, [pushToast]);
 
   const handleFile = (file: File | null | undefined) => {
@@ -251,12 +251,12 @@ export default function VariantUploader() {
           ) : (
             <div className="pop-in card mt-5 !border-mark-green/40 p-5 text-center">
               <p className="flex items-center justify-center gap-2 text-[14px] font-bold text-mark-green">
-                <CheckCircle2 className="h-4.5 w-4.5" /> Вариант опубликован
+                <CheckCircle2 className="h-4.5 w-4.5" /> «{published.variantTitle}» опубликован
               </p>
               <p className="mt-1 text-[12px] text-chalk-400">Уникальная ссылка для учеников (код <b className="font-mono text-mark-yellow">{published.linkCode}</b>):</p>
               <div className="mx-auto mt-3 flex max-w-lg items-center gap-2 rounded-lg border border-board-600/70 bg-board-950/60 px-3 py-2.5">
                 <Link2 className="h-4 w-4 shrink-0 text-mark-yellow" />
-                <code className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px] text-chalk-200">{variantLink(published.linkCode)}</code>
+                <code className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px] text-chalk-200">{serverUrl ?? variantLink(published.linkCode)}</code>
                 <button onClick={copyLink} className="btn-gold shrink-0 px-3 py-1.5 text-[11.5px]"><Copy className="h-3.5 w-3.5" />Копировать</button>
               </div>
               <p className="mt-2.5 text-[11px] text-chalk-500">Откройте ссылку в новой вкладке — вариант запустится у ученика без авторизации.</p>

@@ -11,15 +11,18 @@ import { ACHIEVEMENTS, BANK, LEADER_SEED, type AchieveSnapshot } from "./data";
 import { Avatar, Heatmap, LatexText } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
+import { RU_AVG_SCORE_2026 } from "./config";
 
 /* ═══════════════════════ АНАЛИТИКА ═══════════════════════ */
 export function AnalyticsPage() {
-  const { attempts, topicStats, user } = useApp();
+  const { attempts, topicStats, user, patchUser } = useApp();
   const has = attempts.length > 0;
   const data = attempts.map((a, i) => ({ variant: `П${i + 1}`, secondary: a.secondary, mistakes: a.mistakes }));
   const latest = data[data.length - 1];
   const avg = has ? Math.round(attempts.reduce((s, a) => s + a.secondary, 0) / attempts.length) : 0;
   const mistakes3 = attempts.slice(-3).reduce((s, a) => s + a.mistakes, 0);
+  const goal = user?.goal ?? 80;
+  const toGoal = latest ? goal - latest.secondary : null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-5">
@@ -36,11 +39,12 @@ export function AnalyticsPage() {
         </div>
       ) : (
         <>
-          <div className="rise rise-2 mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="rise rise-2 mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
             {[
               { label: "Текущий балл", value: latest.secondary, suffix: "/ 100", tone: "text-mark-green" },
+              { label: "Цель", value: goal, suffix: "/ 100", tone: "text-mark-yellow" },
+              { label: "До цели", value: toGoal !== null ? (toGoal > 0 ? `+${toGoal}` : "✓") : "—", suffix: toGoal !== null && toGoal > 0 ? "баллов" : toGoal !== null ? "достигнуто" : "", tone: toGoal !== null && toGoal <= 0 ? "text-mark-green" : "text-mark-yellow" },
               { label: "Средний балл", value: avg, suffix: "/ 100", tone: "text-chalk-50" },
-              { label: "Попыток", value: attempts.length, suffix: "", tone: "text-chalk-50" },
               { label: "Ошибки 0.1 (за 3)", value: mistakes3, suffix: "", tone: mistakes3 > 3 ? "text-mark-red" : "text-mark-yellow" },
             ].map((k) => (
               <div key={k.label} className="card card-hover p-4">
@@ -51,7 +55,29 @@ export function AnalyticsPage() {
           </div>
 
           <div className="rise rise-3 card mt-4 p-5">
-            <h2 className="font-display text-sm font-bold text-chalk-50">Динамика баллов и «ошибок 0.1»</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-display text-sm font-bold text-chalk-50">Динамика баллов и «ошибок 0.1»</h2>
+              {/* редактор цели */}
+              <div className="flex items-center gap-2">
+                <span className="tick">Ваша цель</span>
+                <button
+                  onClick={() => patchUser({ goal: Math.max(40, goal - 2) })}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-board-600/70 bg-board-800/60 text-sm font-bold text-chalk-300 transition-all hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-90"
+                  aria-label="Уменьшить цель"
+                >−</button>
+                <span key={goal} className="count-pop w-9 text-center font-display text-lg font-bold tabular-nums text-mark-yellow">{goal}</span>
+                <button
+                  onClick={() => patchUser({ goal: Math.min(100, goal + 2) })}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-board-600/70 bg-board-800/60 text-sm font-bold text-chalk-300 transition-all hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-90"
+                  aria-label="Увеличить цель"
+                >+</button>
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] font-semibold text-chalk-500">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 border-t-2 border-dashed border-mark-yellow" />ваша цель</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 border-t-2 border-dotted border-mark-blue" />средний по РФ · {RU_AVG_SCORE_2026}</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 border-t-2 border-dashed border-mark-green/70" />порог · 70</span>
+            </div>
             <div className="mt-3 h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={data} margin={{ top: 6, right: 4, left: -12, bottom: 0 }}>
@@ -60,7 +86,9 @@ export function AnalyticsPage() {
                   <YAxis yAxisId="left" domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-chalk-500)" }} />
                   <YAxis yAxisId="right" orientation="right" domain={[0, 5]} allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-chalk-500)" }} />
                   <Tooltip contentStyle={{ backgroundColor: "var(--color-board-850)", border: "1px solid var(--color-board-600)", borderRadius: 10, fontSize: 12, color: "var(--color-chalk-200)" }} cursor={{ fill: "var(--color-board-800)" }} />
-                  <ReferenceLine yAxisId="left" y={70} stroke="var(--color-mark-blue)" strokeDasharray="5 5" label={{ value: "порог 70", fill: "var(--color-mark-blue)", fontSize: 10, position: "insideTopRight" }} />
+                  <ReferenceLine yAxisId="left" y={70} stroke="var(--color-mark-green)" strokeOpacity={0.55} strokeDasharray="5 5" label={{ value: "порог 70", fill: "var(--color-mark-green)", fontSize: 9.5, position: "insideBottomLeft" }} />
+                  <ReferenceLine yAxisId="left" y={RU_AVG_SCORE_2026} stroke="var(--color-mark-blue)" strokeDasharray="2 4" label={{ value: `РФ · ${RU_AVG_SCORE_2026}`, fill: "var(--color-mark-blue)", fontSize: 9.5, position: "insideBottomRight" }} />
+                  <ReferenceLine yAxisId="left" y={goal} stroke="var(--color-mark-yellow)" strokeWidth={1.6} strokeDasharray="7 5" label={{ value: `ваша цель · ${goal}`, fill: "var(--color-mark-yellow)", fontSize: 10, position: "insideTopRight" }} />
                   <Bar yAxisId="right" dataKey="mistakes" name="Ошибки 0.1" fill="var(--color-mark-red)" radius={[4, 4, 0, 0]} barSize={14} opacity={0.85} />
                   <Line yAxisId="left" type="monotone" dataKey="secondary" name="Тестовый балл" stroke="var(--color-mark-green)" strokeWidth={2.5} dot={{ r: 3.5, fill: "var(--color-mark-green)", strokeWidth: 0 }} />
                 </ComposedChart>

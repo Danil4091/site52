@@ -64,6 +64,7 @@ export default function AuthModal({
   const [password2, setPassword2] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [invite, setInvite] = useState("");
+  const [goal, setGoal] = useState(80);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,6 +127,7 @@ export default function AuthModal({
       nickname: nick,
       role: "student",
       password,
+      goal, // целевой балл ЕГЭ — отображается пунктиром на графике аналитики
       teacherCode: code || undefined,
       teacherName: teacherName ?? undefined,
       consentVersion: "1.0",
@@ -200,6 +202,31 @@ export default function AuthModal({
                 aria-label="Подтверждение пароля"
                 onKeyDown={(e) => e.key === "Enter" && submit()}
               />
+
+              {/* целевой балл ЕГЭ — пунктирная линия на графике аналитики */}
+              <div className="rounded-lg border border-board-600/70 bg-board-800/40 px-3.5 py-3">
+                <div className="flex items-baseline justify-between">
+                  <label htmlFor="goal-slider" className="text-[11px] font-bold uppercase tracking-wider text-chalk-400">Цель по баллам</label>
+                  <span key={goal} className="count-pop font-display text-xl font-bold tabular-nums text-mark-yellow">{goal}</span>
+                </div>
+                <input
+                  id="goal-slider"
+                  type="range"
+                  min={40}
+                  max={100}
+                  step={2}
+                  value={goal}
+                  onChange={(e) => setGoal(Number(e.target.value))}
+                  className="mt-2 w-full accent-[var(--color-mark-yellow)]"
+                  aria-label="Целевой балл ЕГЭ"
+                />
+                <div className="mt-1 flex justify-between font-mono text-[10px] text-chalk-600">
+                  <span>40 · порог</span>
+                  <span>70 · вуз</span>
+                  <span>100 · макс</span>
+                </div>
+              </div>
+
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-chalk-500" />
                 <input
