@@ -145,7 +145,7 @@ export function Heatmap({ stats, className = "" }: {
       <p className="tick mb-2">Часть 1 · №1–12</p>
       <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">{Array.from({ length: 12 }, (_, i) => cell(i + 1))}</div>
       <p className="tick mb-2 mt-4">Часть 2 · №13–19</p>
-      <div className="grid grid-cols-7 gap-1.5">{Array.from({ length: 7 }, (_, i) => cell(i + 13))}</div>
+      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">{Array.from({ length: 7 }, (_, i) => cell(i + 13))}</div>
       <div className="mt-4 flex flex-wrap items-center gap-3 text-[10.5px] font-semibold text-chalk-500">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-green)" }} /> ≥ 80%</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-yellow)" }} /> 50–79%</span>
@@ -376,20 +376,36 @@ export function AnswerInput({
   const { register } = useFieldDock();
   const ref = useRef({ value, onChange, onSubmit });
   ref.current = { value, onChange, onSubmit };
+  const inputEl = useRef<HTMLInputElement>(null);
 
   /* при размонтировании поля клавиатура скрывается */
   useEffect(() => () => register(null), [register]);
 
+  /* На мобильных глобальная клавиатура занимает низ экрана — поднимаем
+     инпут в зону видимости, чтобы ответ не прятался под ней. */
+  const scrollIntoView = () => {
+    if (typeof window === "undefined") return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.setTimeout(
+      () => inputEl.current?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }),
+      240
+    );
+  };
+
   return (
     <input
+      ref={inputEl}
       value={value}
       onChange={(e) => onChange(sanitizeAnswer(e.target.value))}
-      onFocus={() => register({
-        label,
-        get: () => ref.current.value,
-        set: ref.current.onChange,
-        submit: ref.current.onSubmit,
-      })}
+      onFocus={() => {
+        register({
+          label,
+          get: () => ref.current.value,
+          set: ref.current.onChange,
+          submit: ref.current.onSubmit,
+        });
+        scrollIntoView();
+      }}
       onBlur={() => register(null)}
       onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
       placeholder={placeholder}

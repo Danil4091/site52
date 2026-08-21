@@ -17,18 +17,20 @@ const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "analytics", label: "Аналитика", short: "Аналитика", icon: BarChart3 },
 ];
 
+/* Нижняя навигация: 5 вкладок, весь функционал доступен максимум в 1–2 тапа.
+   Ошибки и ачивки — иконками в шапке/странице «Рейтинг», тренажёры — из Банка. */
 const MOBILE_STUDENT: { key: Route; label: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", icon: Home },
+  { key: "bank", label: "Банк", icon: Library },
   { key: "variants", label: "Варианты", icon: ClipboardList },
-  { key: "mistakes", label: "Ошибки", icon: Eraser },
   { key: "analytics", label: "Аналитика", icon: BarChart3 },
   { key: "rating", label: "Рейтинг", icon: Trophy },
 ];
 const MOBILE_TEACHER: { key: Route; label: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", icon: Home },
-  { key: "variants", label: "Варианты", icon: ClipboardList },
+  { key: "bank", label: "Банк", icon: Library },
   { key: "admin", label: "Кабинет", icon: Settings },
-  { key: "mistakes", label: "Ошибки", icon: Eraser },
+  { key: "variants", label: "Варианты", icon: ClipboardList },
   { key: "rating", label: "Рейтинг", icon: Trophy },
 ];
 
@@ -111,7 +113,13 @@ export function Header() {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2 xl:ml-4">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2 xl:ml-4">
+          {/* журнал ошибок — на мобильных один тап из шапки */}
+          <button onClick={() => go("mistakes")}
+            className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors duration-200 active:scale-95 md:hidden ${route === "mistakes" ? "border-mark-yellow/60 bg-board-700 text-mark-yellow" : "border-board-600/70 bg-board-800/60 text-chalk-400 hover:text-chalk-50"}`}
+            aria-label="Журнал ошибок" title="Журнал ошибок">
+            <Eraser className="h-4 w-4" />
+          </button>
           <button onClick={toggle}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-board-600/70 bg-board-800/60 text-chalk-400 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-95"
             aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"} title={theme === "dark" ? "Светлая тема" : "Тёмная тема"}>

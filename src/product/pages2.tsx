@@ -123,7 +123,7 @@ export function RatingPage() {
           const heights = ["h-28", "h-36", "h-24"];
           const medals = [<Medal key="s" className="h-5 w-5 text-chalk-400" />, <Crown key="g" className="h-6 w-6 text-mark-yellow" />, <Medal key="b" className="h-5 w-5 text-mark-red" />];
           return (
-            <div key={p.nick} className="flex w-24 flex-col items-center sm:w-28">
+            <div key={p.nick} className="flex w-20 flex-col items-center min-[400px]:w-24 sm:w-28">
               {medals[i]}
               <div className="mt-2"><Avatar name={p.name} className="h-12 w-12 text-[13px]" /></div>
               <p className="mt-1.5 max-w-full truncate text-[12px] font-bold text-chalk-50">{p.name}</p>
