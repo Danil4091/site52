@@ -32,6 +32,7 @@ export const makeInviteCode = (nick: string) =>
   `KOMI-${nick.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase()}`;
 
 const REFLOG_KEY = "komi-reflog-v1";
+export const FREEZE_COST = 100; // XP за одну «заморозку» серии
 export function logReferral(code: string, nick: string) {
   try {
     const log = JSON.parse(localStorage.getItem(REFLOG_KEY) ?? "[]") as { code: string; nick: string; ts: number }[];
@@ -99,7 +100,7 @@ export function saveSession(user: ProductUser | null) {
   } catch { /* ок */ }
 }
 
-interface StreakState { days: number; best: number; last: string; xp: number; }
+interface StreakState { days: number; best: number; last: string; xp: number; freezes: number; }
 
 interface AppState {
   user: ProductUser | null;
@@ -146,6 +147,8 @@ interface AppState {
   tagStats: Record<string, number>;
   recordMarathon: (correct: number, total: number, seconds: number) => void;
   assignTag: (mistakeNumber: number, tag: string) => void;
+  buyFreeze: () => void;
+  freezesBought: number;
   inviteCode: string;
 
   go: (r: Route) => void;
@@ -198,7 +201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notifs, setNotifs] = useState<NotifItem[]>([]);
   const [nightOwl, setNightOwl] = useState(false);
   const [probBest, setProbBestState] = useState(0);
-  const [streak, setStreak] = useState<StreakState>({ days: 0, best: 0, last: "", xp: 0 });
+  const [streak, setStreak] = useState<StreakState>({ days: 0, best: 0, last: "", xp: 0, freezes: 0 });
   const [taskBank, setTaskBank] = useState<CustomTask[]>(() => read<CustomTask[]>(TASKBANK_KEY, []));
   const [trainerTopic, setTrainerTopic] = useState<number | null>(null);
   const [solvedTaskIds, setSolvedTaskIds] = useState<string[]>([]);
@@ -214,6 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [referrals, setReferrals] = useState<string[]>([]);
   const [tagsAssigned, setTagsAssigned] = useState(0);
   const [tagStats, setTagStats] = useState<Record<string, number>>({});
+  const [freezesBought, setFreezesBought] = useState(0);
 
   /* загрузка данных при смене пользователя — демо-набор только у «artom» */
   useEffect(() => {
@@ -226,10 +230,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTopicStats(demo ? demoTopicStats() : read<Record<number, TopicStat>>(scoped("komi-topics", s), {}));
     setNightOwl(read<boolean>(scoped("komi-nightowl", s), false));
     setProbBestState(read<number>(scoped("komi-probbest", s), 0));
-    /* стрик: если последняя задача решалась раньше вчера — серия сгорела */
-    const st = read<StreakState>(scoped("komi-streak", s), { days: 0, best: 0, last: "", xp: 0 });
-    if (st.last && st.last !== dayIso() && st.last !== yesterdayIso()) st.days = 0;
-    if (demo && !st.last) { const d = { days: 6, best: 9, last: dayIso(), xp: 430 }; setStreak(d); }
+    /* стрик: пропуск сжигает серию, если нет «страховки серии» (streak freeze) */
+    const st = read<StreakState>(scoped("komi-streak", s), { days: 0, best: 0, last: "", xp: 0, freezes: 0 });
+    st.freezes = st.freezes ?? 0;
+    if (st.last && st.last !== dayIso() && st.last !== yesterdayIso()) {
+      const missed = Math.max(0, Math.round((new Date(dayIso()).getTime() - new Date(st.last).getTime()) / 86_400_000) - 1);
+      if (missed > 0 && st.freezes >= missed) {
+        /* страховка сработала: списываем по одной заморозке за пропущенный день */
+        st.freezes -= missed;
+        st.last = yesterdayIso();
+        setTimeout(() => {
+          pushToast(`Страховка серии сработала: −${missed} заморозка, серия ${st.days} дн. сохранена`);
+          addNotif({ type: "system", title: "Серия спасена ❄", body: `Вы пропустили ${missed} дн., но страховка сохранила серию. Решите задачу сегодня, чтобы продолжить.` });
+        }, 400);
+      } else {
+        st.days = 0;
+      }
+    }
+    if (demo && !st.last) { const d = { days: 6, best: 9, last: dayIso(), xp: 430, freezes: 1 }; setStreak(d); }
     else setStreak(st);
     setSolvedTaskIds(read<string[]>(scoped("komi-solvedtasks", s), []));
     setTrainerTopic(null);
@@ -237,6 +255,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setMarathonBest(read<number>(scoped("komi-marathon-best", s), 0));
     setTagsAssigned(read<number>(scoped("komi-tags-n", s), 0));
     setTagStats(read<Record<string, number>>(scoped("komi-tagstats", s), {}));
+    setFreezesBought(read<number>(scoped("komi-freezes-bought", s), 0));
 
     /* рефералы: считаем из общего журнала по коду пользователя */
     if (user) {
@@ -278,6 +297,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (scope !== "guest") write(scoped("komi-referrals", scope), referrals); }, [referrals, scope]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-tags-n", scope), tagsAssigned); }, [tagsAssigned, scope]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-tagstats", scope), tagStats); }, [tagStats, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-freezes-bought", scope), freezesBought); }, [freezesBought, scope]);
 
   const pushToast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -297,7 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const cont = s.last === yesterdayIso();
       const days = sameDay ? s.days : cont ? s.days + 1 : 1;
       const xp = s.xp + 10 + (sameDay ? 0 : 15);
-      return { days, best: Math.max(s.best, days), last: today, xp };
+      return { days, best: Math.max(s.best, days), last: today, xp, freezes: s.freezes };
     });
   }, []);
 
@@ -337,9 +357,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes,
       probBest, nightOwl, solvedTasks, probSolved, perfectVariants,
       distinctTopics, marathonCount, marathonBest, referrals: referrals.length,
-      tagsAssigned, weeklyVariants, goalReached,
+      tagsAssigned, weeklyVariants, goalReached, freezesBought,
     }),
-    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants, distinctTopics, marathonCount, marathonBest, referrals.length, tagsAssigned, weeklyVariants, goalReached]
+    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants, distinctTopics, marathonCount, marathonBest, referrals.length, tagsAssigned, weeklyVariants, goalReached, freezesBought]
   );
 
   /* автопроверка достижений: конфетти + XP + тост + уведомление */
@@ -592,6 +612,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTagStats((prev) => ({ ...prev, [tag]: (prev[tag] ?? 0) + 1 }));
   }, []);
 
+  /* ── страховка серии (streak freeze): 100 XP → 1 заморозка ── */
+  const buyFreeze = useCallback(() => {
+    if (streak.xp < FREEZE_COST) {
+      pushToast(`Не хватает XP: нужно ${FREEZE_COST}, у вас ${streak.xp}`);
+      return;
+    }
+    setStreak((s) => ({ ...s, xp: s.xp - FREEZE_COST, freezes: s.freezes + 1 }));
+    setFreezesBought((n) => n + 1);
+    pushToast(`Страховка серии куплена (−${FREEZE_COST} XP)`);
+    addNotif({ type: "system", title: "Страховка серии ❄", body: "Один пропущенный день больше не сожжёт серию. Заморозка сработает автоматически." });
+  }, [streak.xp, pushToast, addNotif]);
+
   const importTasks = useCallback((list: CustomTask[]) => {
     let added = 0, skipped = 0;
     setTaskBank((prev) => {
@@ -615,7 +647,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     streak, todaySolved, taskBank,
     trainerTopic, solvedTaskIds, openTrainer, markTaskSolved, celebrate,
     publishedVariants, activeVariant, publishVariant, unpublishVariant, runPublishedVariant, attachTeacher, recordPublishedAttempt,
-    marathonCount, marathonBest, referrals, tagsAssigned, tagStats, recordMarathon, assignTag,
+    marathonCount, marathonBest, referrals, tagsAssigned, tagStats, recordMarathon, assignTag, buyFreeze, freezesBought,
     inviteCode: user ? makeInviteCode(user.nickname) : "",
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),

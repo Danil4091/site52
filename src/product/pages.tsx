@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eraser, Eye, Flame, Info,
-  Lightbulb, MinusCircle, Play, Rocket, Sparkles, Target, Timer, Users, XCircle,
+  Lightbulb, MinusCircle, Play, Rocket, Snowflake, Sparkles, Target, Timer, Users, XCircle,
 } from "lucide-react";
 import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
-import { useApp, type CustomTask, type ExamResult } from "./store";
+import { FREEZE_COST, useApp, type CustomTask, type ExamResult } from "./store";
 import {
   BANK, PROB_PROBLEMS, REAL_VARIANT, VARIANTS, answersMatch, daysUntilExam, getDailyTip, greeting,
 } from "./data";
@@ -65,7 +65,7 @@ function useForecast(seconds: number[]): number | null {
 export function HomePage() {
   const {
     user, attempts, topicStats, mistakes, go, startVariant, streak, todaySolved,
-    inviteCode, referrals, marathonBest, pushToast,
+    inviteCode, referrals, marathonBest, pushToast, buyFreeze,
   } = useApp();
   const days = daysUntilExam();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : null;
@@ -107,7 +107,22 @@ export function HomePage() {
             </p>
           </div>
           <div className="hidden h-12 w-px bg-board-700 sm:block" />
-          <StreakFlame days={streak.days} active={todaySolved} />
+          <div className="flex flex-col gap-2">
+            <StreakFlame days={streak.days} active={todaySolved} freezes={streak.freezes} />
+            <button
+              onClick={buyFreeze}
+              disabled={streak.xp < FREEZE_COST}
+              className={`group flex w-fit items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-all active:scale-95 ${
+                streak.xp >= FREEZE_COST
+                  ? "border-mark-blue/40 bg-mark-blue/10 text-mark-blue hover:bg-mark-blue/20"
+                  : "cursor-not-allowed border-board-600/50 bg-board-800/40 text-chalk-600"
+              }`}
+              title={streak.xp >= FREEZE_COST ? `Купить заморозку за ${FREEZE_COST} XP` : `Нужно ${FREEZE_COST} XP (у вас ${streak.xp})`}
+            >
+              <Snowflake className="h-3.5 w-3.5" />
+              Страховка серии · {FREEZE_COST} XP
+            </button>
+          </div>
           <div className="hidden h-12 w-px bg-board-700 sm:block" />
           <XpBar xp={streak.xp} className="min-w-[180px] flex-1 sm:max-w-xs" />
           <div className="ml-auto text-right">

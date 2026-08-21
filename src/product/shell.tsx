@@ -6,6 +6,8 @@ import {
 import { useTheme } from "./theme";
 import { useApp, type Route } from "./store";
 import { NotificationsBell } from "./NotificationsBell";
+import { levelFromXp } from "./ui";
+import { titleForLevel } from "./data";
 
 const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", short: "Главная", icon: Home },
@@ -143,7 +145,9 @@ export function Header() {
                 </span>
                 <span className="text-left">
                   <span className="block text-[12px] font-bold leading-tight text-chalk-50">@{user.nickname}</span>
-                  <span className="block text-[9.5px] font-medium text-chalk-500">{user.role === "teacher" ? "преподаватель" : "ученик"}</span>
+                  <span className={`block text-[9.5px] font-bold leading-tight ${titleForLevel(levelFromXp(streak.xp)).color}`}>
+                    {user.role === "teacher" ? "преподаватель · " : ""}LVL {levelFromXp(streak.xp)} · {titleForLevel(levelFromXp(streak.xp)).title}
+                  </span>
                 </span>
               </span>
               {user.role === "teacher" && (

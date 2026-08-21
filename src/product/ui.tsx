@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { Check, Delete, Eraser, Flame, Keyboard, Minus } from "lucide-react";
+import { Check, Crown, Delete, Eraser, Flame, Keyboard, Minus, Snowflake } from "lucide-react";
+import { TITLES, titleForLevel } from "./data";
 
 /* ═══════════════════════ LaTeX-рендеринг ═══════════════════════
    Принимает строку из базы/API и рендерит:
@@ -162,11 +163,21 @@ export const levelFromXp = (xp: number) => Math.floor(xp / 100) + 1;
 export function XpBar({ xp, className = "" }: { xp: number; className?: string }) {
   const level = levelFromXp(xp);
   const prog = xp % 100;
+  const title = titleForLevel(level);
+  const next = TITLES.find((t) => t.min > level);
   return (
     <div className={className}>
-      <div className="flex items-baseline justify-between">
-        <span className="font-display text-[13px] font-bold text-mark-yellow">LVL {level}</span>
-        <span className="font-mono text-[11px] font-semibold tabular-nums text-chalk-400">{prog} / 100 XP</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="flex items-baseline gap-1.5">
+          <span className="font-display text-[13px] font-bold text-mark-yellow">LVL {level}</span>
+          <span className={`font-display text-[10.5px] font-bold ${title.color}`}>{title.title}</span>
+        </span>
+        <span
+          className="font-mono text-[11px] font-semibold tabular-nums text-chalk-400"
+          title={next ? `До титула «${next.title}» — ${next.min - level} ур.` : "Максимальный титул"}
+        >
+          {prog} / 100 XP
+        </span>
       </div>
       <div className="xp-track mt-1.5">
         <div className="xp-fill" style={{ width: `${prog}%` }} />
@@ -175,7 +186,24 @@ export function XpBar({ xp, className = "" }: { xp: number; className?: string }
   );
 }
 
-export function StreakFlame({ days, active, className = "" }: { days: number; active: boolean; className?: string }) {
+/* Бейдж титула — публичный статус рядом с ником в рейтинге */
+export function TitleBadge({ xp, compact = false }: { xp: number; compact?: boolean }) {
+  const title = titleForLevel(levelFromXp(xp));
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-display font-bold ${title.color} ${
+        compact ? "text-[9.5px]" : "rounded-full border border-current/25 bg-current/5 px-2 py-0.5 text-[10px]"
+      }`}
+      style={compact ? undefined : { borderColor: "color-mix(in srgb, currentColor 30%, transparent)", background: "color-mix(in srgb, currentColor 8%, transparent)" }}
+      title={`Титул за уровень ${levelFromXp(xp)}`}
+    >
+      {levelFromXp(xp) >= 25 && <Crown className={compact ? "h-2.5 w-2.5" : "h-3 w-3"} />}
+      {title.title}
+    </span>
+  );
+}
+
+export function StreakFlame({ days, active, freezes = 0, className = "" }: { days: number; active: boolean; freezes?: number; className?: string }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <Flame className={`h-6 w-6 ${days > 0 ? (active ? "flame-live text-mark-red" : "text-mark-red/80") : "text-chalk-600"}`} />
@@ -185,6 +213,14 @@ export function StreakFlame({ days, active, className = "" }: { days: number; ac
           {active ? "дней · сегодня ✓" : "дней подряд"}
         </p>
       </div>
+      {freezes > 0 && (
+        <span
+          className="pop-in ml-1 flex items-center gap-1 rounded-full border border-mark-blue/40 bg-mark-blue/10 px-2 py-0.5 text-[10px] font-bold text-mark-blue"
+          title={`Страховок серии: ${freezes}. Пропущенный день не сожжёт серию.`}
+        >
+          <Snowflake className="h-3 w-3" />×{freezes}
+        </span>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import { useApp, type CustomTask } from "./store";
 import { ACHIEVEMENTS, BANK, ERROR_TAGS, LEADER_SEED, type AchieveSnapshot } from "./data";
-import { Avatar, Heatmap, LatexText } from "./ui";
+import { Avatar, Heatmap, LatexText, TitleBadge, levelFromXp } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
 import { RU_AVG_SCORE_2026 } from "./config";
@@ -231,6 +231,7 @@ export function RatingPage() {
               {medals[i]}
               <div className="mt-2"><Avatar name={p.nick} className="h-12 w-12 text-[13px]" /></div>
               <p className="mt-1.5 max-w-full truncate font-mono text-[12px] font-bold text-chalk-50">@{p.nick}</p>
+              <TitleBadge xp={p.xp} compact />
               <p className="mt-0.5 font-display text-lg font-bold tabular-nums text-mark-yellow">{p.score}</p>
               <div className={`mt-1 w-full rounded-t-lg border border-b-0 border-board-600/50 bg-board-800/70 ${heights[i]}`} />
             </div>
@@ -245,8 +246,11 @@ export function RatingPage() {
               <span className="w-7 text-center font-display text-[13px] font-bold tabular-nums text-chalk-500">{i + 1}</span>
               <Avatar name={p.nick} />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-[13px] font-bold text-chalk-50">@{p.nick}</p>
-                <p className="text-[10.5px] text-chalk-500">{p.city} · {p.streak} дн. серия</p>
+                <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-bold text-chalk-50">
+                  @{p.nick}
+                  <TitleBadge xp={p.xp} compact />
+                </p>
+                <p className="text-[10.5px] text-chalk-500">{p.city} · {p.streak} дн. серия · LVL {levelFromXp(p.xp)}</p>
               </div>
               <span className={`flex items-center gap-0.5 text-[11px] font-bold tabular-nums ${p.delta > 0 ? "text-mark-green" : p.delta < 0 ? "text-mark-red" : "text-chalk-600"}`}>
                 {p.delta > 0 ? <TrendingUp className="h-3 w-3" /> : p.delta < 0 ? <TrendingDown className="h-3 w-3" /> : "—"}{p.delta !== 0 && Math.abs(p.delta)}
@@ -255,6 +259,20 @@ export function RatingPage() {
             </li>
           ))}
         </ul>
+        {user && (
+          <div className="flex items-center gap-3 border-t-2 border-mark-yellow/40 bg-mark-yellow/5 px-4 py-3">
+            <span className="w-7 text-center font-display text-[13px] font-bold tabular-nums text-mark-yellow">вы</span>
+            <Avatar name={user.nickname} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-bold text-chalk-50">
+                @{user.nickname}
+                <TitleBadge xp={streak.xp} compact />
+              </p>
+              <p className="text-[10.5px] text-chalk-500">{streak.days} дн. серия · LVL {levelFromXp(streak.xp)} · {streak.xp} XP</p>
+            </div>
+            <span className="font-display text-[16px] font-bold tabular-nums text-mark-yellow">{best}</span>
+          </div>
+        )}
       </div>
 
       <p className="tick mt-10 text-mark-pink">Достижения</p>

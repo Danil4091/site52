@@ -174,6 +174,7 @@ export interface AchieveSnapshot {
   tagsAssigned: number;     // размечено ошибок тегами
   weeklyVariants: number;   // вариантов за последние 7 дней
   goalReached: boolean;     // достигнут целевой балл
+  freezesBought: number;    // куплено страховок серии
 }
 export interface AchievementDef {
   id: string; title: string; desc: string; icon: LucideIcon;
@@ -208,20 +209,34 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "goal-getter", title: "Целеустремлённый", desc: "Достичь своего целевого балла", icon: Flag, xp: 100, test: (s) => s.goalReached, progress: (s) => ({ cur: s.goalReached ? 1 : 0, goal: 1 }) },
   { id: "explorer", title: "Эрудит", desc: "Решить задачи по 10 разным темам", icon: Brain, xp: 90, test: (s) => s.distinctTopics >= 10, progress: (s) => ({ cur: Math.min(s.distinctTopics, 10), goal: 10 }) },
   { id: "centurion", title: "Сотник", desc: "Решить 100 задач суммарно", icon: Medal, xp: 200, test: (s) => s.solvedTasks >= 100, progress: (s) => ({ cur: Math.min(s.solvedTasks, 100), goal: 100 }) },
+  { id: "prepared", title: "Предусмотрительный", desc: "Купить страховку серии", icon: Snowflake, xp: 30, test: (s) => s.freezesBought >= 1, progress: (s) => ({ cur: Math.min(s.freezesBought, 1), goal: 1 }) },
 ];
+
+/* ─────────────── титулы по уровням (публичный статус в рейтинге) ─────────────── */
+export interface LevelTitle { min: number; title: string; color: string; }
+export const TITLES: LevelTitle[] = [
+  { min: 25, title: "Гроссмейстер ЕГЭ", color: "text-mark-pink" },
+  { min: 15, title: "Мастер", color: "text-mark-green" },
+  { min: 10, title: "Боец", color: "text-mark-yellow" },
+  { min: 5, title: "Разведчик", color: "text-mark-blue" },
+  { min: 1, title: "Новичок", color: "text-chalk-500" },
+];
+export function titleForLevel(level: number): LevelTitle {
+  return TITLES.find((t) => level >= t.min) ?? TITLES[TITLES.length - 1];
+}
 
 /* ─────────────── рейтинг (приватность: имя + ник, без фамилий) ─────────────── */
 export const LEADER_SEED = [
-  { id: 1, name: "Анна", nick: "anna_mz", city: "Ухта", score: 96, solved: 214, streak: 21, delta: 2 },
-  { id: 2, name: "Дмитрий", nick: "dima_lg", city: "Сыктывкар", score: 94, solved: 198, streak: 18, delta: 0 },
-  { id: 3, name: "Мария", nick: "masha_vk", city: "Печора", score: 91, solved: 187, streak: 24, delta: 1 },
-  { id: 4, name: "Арсений", nick: "senya_ch", city: "Усинск", score: 89, solved: 176, streak: 12, delta: -1 },
-  { id: 5, name: "Полина", nick: "polina_nk", city: "Воркута", score: 87, solved: 169, streak: 15, delta: 3 },
-  { id: 6, name: "Егор", nick: "egor_tr", city: "Сосногорск", score: 84, solved: 154, streak: 9, delta: -2 },
-  { id: 7, name: "Влада", nick: "vlada_os", city: "Микунь", score: 82, solved: 148, streak: 11, delta: 1 },
-  { id: 8, name: "Никита", nick: "nikita_rv", city: "Инта", score: 80, solved: 139, streak: 7, delta: 0 },
-  { id: 9, name: "Кира", nick: "kira_zm", city: "Визинга", score: 78, solved: 131, streak: 14, delta: 2 },
-  { id: 10, name: "Тимофей", nick: "tima_gg", city: "Эжва", score: 75, solved: 122, streak: 6, delta: -1 },
+  { id: 1, name: "Анна", nick: "anna_mz", city: "Ухта", score: 96, solved: 214, streak: 21, delta: 2, xp: 2640 },
+  { id: 2, name: "Дмитрий", nick: "dima_lg", city: "Сыктывкар", score: 94, solved: 198, streak: 18, delta: 0, xp: 1520 },
+  { id: 3, name: "Мария", nick: "masha_vk", city: "Печора", score: 91, solved: 187, streak: 24, delta: 1, xp: 1430 },
+  { id: 4, name: "Арсений", nick: "senya_ch", city: "Усинск", score: 89, solved: 176, streak: 12, delta: -1, xp: 980 },
+  { id: 5, name: "Полина", nick: "polina_nk", city: "Воркута", score: 87, solved: 169, streak: 15, delta: 3, xp: 940 },
+  { id: 6, name: "Егор", nick: "egor_tr", city: "Сосногорск", score: 84, solved: 154, streak: 9, delta: -2, xp: 610 },
+  { id: 7, name: "Влада", nick: "vlada_os", city: "Микунь", score: 82, solved: 148, streak: 11, delta: 1, xp: 520 },
+  { id: 8, name: "Никита", nick: "nikita_rv", city: "Инта", score: 80, solved: 139, streak: 7, delta: 0, xp: 390 },
+  { id: 9, name: "Кира", nick: "kira_zm", city: "Визинга", score: 78, solved: 131, streak: 14, delta: 2, xp: 330 },
+  { id: 10, name: "Тимофей", nick: "tima_gg", city: "Эжва", score: 75, solved: 122, streak: 6, delta: -1, xp: 160 },
 ];
 
 /* ─────────────── журнал ошибок ─────────────── */
