@@ -1,17 +1,82 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowUpFromLine, Check, Copy, Crown, Download, FileJson, Flame,
-  KeyRound, Link2, Medal, Plus, Sparkles, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X,
+  KeyRound, Link2, Medal, Plus, Sparkles, Tag, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X,
 } from "lucide-react";
 import {
   Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useApp, type CustomTask } from "./store";
-import { ACHIEVEMENTS, BANK, LEADER_SEED, type AchieveSnapshot } from "./data";
+import { ACHIEVEMENTS, BANK, ERROR_TAGS, LEADER_SEED, type AchieveSnapshot } from "./data";
 import { Avatar, Heatmap, LatexText } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
 import { RU_AVG_SCORE_2026 } from "./config";
+
+/* ═══════════════════════ ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ═══════════════════════ */
+function WeeklyReport() {
+  const { attempts, mistakes } = useApp();
+  const resolvedMistakesTotal = mistakes.filter((m) => m.resolved).length;
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const week = attempts.filter((a) => a.ts !== undefined && a.ts >= weekAgo);
+
+  const weekVariants = week.length;
+  const first = week[0]?.secondary ?? 0;
+  const last = week[week.length - 1]?.secondary ?? 0;
+  const delta = week.length >= 2 ? last - first : 0;
+  const best = week.length ? Math.max(...week.map((a) => a.secondary)) : 0;
+  const avgMistakes = week.length ? Math.round((week.reduce((s, a) => s + a.mistakes, 0) / week.length) * 10) / 10 : 0;
+  const unresolvedNow = mistakes.filter((m) => !m.resolved).length;
+
+  const weekStart = new Date(weekAgo).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  const weekEnd = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+
+  if (weekVariants === 0) return null;
+
+  const verdict =
+    delta >= 5 ? { icon: TrendingUp, tone: "text-mark-green", text: `Отличная неделя! Балл вырос на ${delta} пунктов.` }
+    : delta > 0 ? { icon: TrendingUp, tone: "text-mark-green", text: `Небольшой рост: +${delta} пункт(а). Держите темп.` }
+    : delta === 0 ? { icon: Target, tone: "text-mark-yellow", text: "Балл стабилен. Попробуйте разобрать ошибки — это даст прирост." }
+    : { icon: TrendingDown, tone: "text-mark-red", text: `Спад на ${Math.abs(delta)} пункт(а). Сфокусируйтесь на «зонах роста» ниже.` };
+  const V = verdict.icon;
+
+  return (
+    <div className="rise rise-2 card mt-4 overflow-hidden">
+      <div className="flex items-center justify-between border-b border-board-700/50 px-5 py-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50">
+            <Sparkles className="h-4 w-4 text-mark-yellow" />
+            Отчёт за неделю
+          </h2>
+          <p className="mt-0.5 text-[11px] text-chalk-500">{weekStart} — {weekEnd}</p>
+        </div>
+        <span className="chip"><Flame className="h-3.5 w-3.5 text-mark-red" />{weekVariants} вар.</span>
+      </div>
+      <div className="grid grid-cols-2 gap-px bg-board-700/40 sm:grid-cols-4">
+        {[
+          { label: "Решено вариантов", value: String(weekVariants), tone: "text-chalk-50" },
+          { label: "Прирост балла", value: delta > 0 ? `+${delta}` : String(delta), tone: delta >= 0 ? "text-mark-green" : "text-mark-red" },
+          { label: "Лучший балл", value: String(best), tone: "text-mark-yellow" },
+          { label: "Ошибок 0.1 / вар.", value: String(avgMistakes), tone: avgMistakes > 2 ? "text-mark-red" : "text-chalk-50" },
+        ].map((k) => (
+          <div key={k.label} className="bg-board-850/80 px-4 py-4 text-center">
+            <p className={`font-display text-2xl font-bold tabular-nums ${k.tone}`}>{k.value}</p>
+            <p className="mt-1 text-[10.5px] font-semibold uppercase tracking-wide text-chalk-500">{k.label}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-start gap-2.5 px-5 py-4">
+        <V className={`mt-0.5 h-4.5 w-4.5 shrink-0 ${verdict.tone}`} />
+        <div>
+          <p className={`text-[13px] font-bold ${verdict.tone}`}>{verdict.text}</p>
+          <p className="mt-0.5 text-[11.5px] text-chalk-400">
+            Разобрано ошибок за всё время: <b className="text-chalk-200">{resolvedMistakesTotal}</b> · сейчас в журнале: <b className="text-chalk-200">{unresolvedNow}</b>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ═══════════════════════ АНАЛИТИКА ═══════════════════════ */
 export function AnalyticsPage() {
@@ -53,6 +118,8 @@ export function AnalyticsPage() {
               </div>
             ))}
           </div>
+
+          <WeeklyReport />
 
           <div className="rise rise-3 card mt-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -238,8 +305,10 @@ export function RatingPage() {
 
 /* ═══════════════════════ ЖУРНАЛ ОШИБОК ═══════════════════════ */
 export function MistakesPage() {
-  const { mistakes, toggleResolved, go } = useApp();
+  const { mistakes, toggleResolved, go, assignTag, tagStats } = useApp();
   const unresolved = mistakes.filter((g) => !g.resolved).length;
+  const taggedStats = Object.entries(tagStats).sort((a, b) => b[1] - a[1]);
+  const topTag = taggedStats[0];
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-5">
@@ -248,6 +317,28 @@ export function MistakesPage() {
       <p className="rise rise-2 mt-2 text-sm text-chalk-400">
         {mistakes.length === 0 ? "Чисто — ошибок пока нет." : `Неразобранных: ${unresolved}. Разбор ошибок даёт +6 баллов за месяц.`}
       </p>
+
+      {/* статистика по тегам причин */}
+      {taggedStats.length > 0 && (
+        <div className="rise rise-2 card mt-5 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Tag className="h-4 w-4 text-mark-pink" />
+            <h2 className="font-display text-sm font-bold text-chalk-50">Почему теряются баллы</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {taggedStats.map(([tag, count]) => (
+              <span key={tag} className="chip" title={`${count} ${count === 1 ? "ошибка" : "ошибок"}`}>
+                <span className="text-mark-pink">{tag}</span> <b className="tabular-nums text-chalk-50">×{count}</b>
+              </span>
+            ))}
+          </div>
+          {topTag && (
+            <p className="mt-2.5 text-[11.5px] leading-relaxed text-chalk-400">
+              Главная причина промахов — <b className="text-mark-pink">{topTag[0]}</b>. Сосредоточьтесь на ней: разбор именно этой категории даст максимальный прирост балла.
+            </p>
+          )}
+        </div>
+      )}
 
       {mistakes.length === 0 ? (
         <div className="rise rise-3 card mt-8 flex flex-col items-center px-6 py-16 text-center">
@@ -270,6 +361,16 @@ export function MistakesPage() {
                       </li>
                     ))}
                   </ul>
+                  {/* теги причины промаха */}
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10.5px] font-semibold uppercase tracking-wide text-chalk-500">Причина:</span>
+                    {ERROR_TAGS.map((t) => (
+                      <button key={t} onClick={() => assignTag(g.number, t)}
+                        className={`rounded-full border px-2 py-0.5 text-[10.5px] font-semibold transition-all active:scale-95 ${g.tag === t ? "border-mark-pink bg-mark-pink/20 text-mark-pink" : "border-board-600/60 text-chalk-400 hover:border-mark-pink/50 hover:text-mark-pink"}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button onClick={() => toggleResolved(g.number)}
                   className={`shrink-0 rounded-lg px-3 py-2 text-[11.5px] font-bold transition-all active:scale-95 ${g.resolved ? "card text-chalk-400 hover:text-chalk-100" : "bg-mark-green/20 text-mark-green hover:bg-mark-green/30"}`}>
