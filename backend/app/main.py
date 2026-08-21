@@ -32,7 +32,9 @@ from .models import Base, ExamType, Task, User, Variant
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+# HMAC_SECRET — основной; SECRET_KEY оставлен как обратной-совместимый alias.
+HMAC_SECRET = os.getenv("HMAC_SECRET") or os.getenv("SECRET_KEY") or "dev-secret-change-me"
+SECRET_KEY = HMAC_SECRET
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
