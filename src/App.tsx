@@ -4,13 +4,14 @@ import { Header, LiveTicker, MobileNav, Footer, Toasts } from "./product/shell";
 import { HomePage, BankPage, VariantsPage, RunPage, ResultsPage, ProbabilityPage } from "./product/pages";
 import { AnalyticsPage, RatingPage, MistakesPage, AdminPage } from "./product/pages2";
 import TrainerPage from "./product/TrainerPage";
+import PublishedVariantRunner from "./product/PublishedVariantRunner";
 import { ConfettiBurst, FieldDockProvider } from "./product/ui";
 import AuthModal from "./product/AuthModal";
 import LegalModal, { type LegalDoc } from "./product/LegalDocs";
 import ForgotPasswordModal from "./product/ForgotPassword";
 
 export default function App() {
-  const { route, burst } = useApp();
+  const { route, burst, runPublishedVariant } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -20,6 +21,19 @@ export default function App() {
     const onLogin = () => setAuthOpen(true);
     window.addEventListener("komi:login", onLogin);
     return () => window.removeEventListener("komi:login", onLogin);
+  }, []);
+
+  /* глубокая ссылка на авторский вариант: ?variant=VAR-XXXXXX */
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("variant");
+    if (code && code.trim()) {
+      const ok = runPublishedVariant(code.trim());
+      if (!ok) {
+        /* вариант ещё не опубликован на этом устройстве — просто очищаем параметр */
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* юридические документы открываются по событию из футера */
@@ -41,6 +55,7 @@ export default function App() {
           {route === "bank" && <BankPage />}
           {route === "trainer" && <TrainerPage />}
           {route === "variants" && <VariantsPage />}
+          {route === "variant-run" && <PublishedVariantRunner />}
           {route === "run" && <RunPage />}
           {route === "results" && <ResultsPage />}
           {route === "probability" && <ProbabilityPage />}

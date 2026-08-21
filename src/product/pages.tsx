@@ -228,7 +228,7 @@ export function BankPage() {
 
 /* ═══════════════════════ ВАРИАНТЫ ═══════════════════════ */
 export function VariantsPage() {
-  const { attempts, startVariant } = useApp();
+  const { attempts, startVariant, publishedVariants, runPublishedVariant } = useApp();
   const bestBy = useMemo(() => {
     const m = new Map<string, number>();
     for (const a of attempts) { const c = m.get(a.variantId); if (c === undefined || a.secondary > c) m.set(a.variantId, a.secondary); }
@@ -275,6 +275,33 @@ export function VariantsPage() {
           );
         })}
       </ul>
+
+      {/* авторские варианты преподавателя */}
+      {publishedVariants.length > 0 && (
+        <>
+          <p className="tick mt-9 text-mark-blue">От преподавателя</p>
+          <h2 className="mt-1 font-display text-xl font-bold text-chalk-50">Авторские варианты</h2>
+          <ul className="mt-4 space-y-3">
+            {publishedVariants.map((pv, i) => (
+              <li key={pv.id} className={`card card-hover rise rise-${Math.min(i + 2, 5)} p-5`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-mark-blue/12 text-mark-blue"><Sparkles className="h-5 w-5" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold text-chalk-50">
+                      {pv.variantTitle}
+                      <span className="rounded-full bg-mark-blue/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-mark-blue">авторский</span>
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] text-chalk-500">
+                      {pv.tasks.length} задач · {pv.timeLimitMinutes} мин · {pv.authorName}
+                    </p>
+                  </div>
+                  <button onClick={() => runPublishedVariant(pv.linkCode)} className="btn-gold px-5 py-2.5 text-sm">Решать <ArrowRight className="h-4 w-4" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

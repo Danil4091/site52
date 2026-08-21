@@ -4,6 +4,10 @@ import {
   answersMatch, seedMistakes, todayShort,
   type AttemptRecord, type MistakeGroup,
 } from "./data";
+import {
+  makeLinkCode, resolveTeacher,
+  type ParsedVariant, type PublishedVariant,
+} from "./variantSchema";
 
 export interface ProductUser {
   name: string; nickname: string; email: string; role: "student" | "teacher";
@@ -16,7 +20,8 @@ export interface ProductUser {
 
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
-  | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer";
+  | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
+  | "variant-run";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
@@ -96,6 +101,15 @@ interface AppState {
   markTaskSolved: (taskId: string, taskNumber: number) => void;
   celebrate: () => void;
 
+  /* авторские варианты: публикация, ссылки, запуск */
+  publishedVariants: PublishedVariant[];
+  activeVariant: PublishedVariant | null;
+  publishVariant: (v: ParsedVariant) => PublishedVariant;
+  unpublishVariant: (id: string) => void;
+  runPublishedVariant: (code: string) => boolean;
+  attachTeacher: (code: string) => { ok: boolean; teacherName?: string };
+  recordPublishedAttempt: (label: string, primary: number, secondary: number, mistakes: number) => void;
+
   go: (r: Route) => void;
   login: (u: ProductUser) => void;
   logout: () => void;
@@ -127,6 +141,7 @@ export interface ExamResult {
 const Ctx = createContext<AppState | null>(null);
 
 const TASKBANK_KEY = "komi-taskbank-v1";
+const PUBLISHED_KEY = "komi-published-variants-v1";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<ProductUser | null>(loadSession);
@@ -149,6 +164,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [taskBank, setTaskBank] = useState<CustomTask[]>(() => read<CustomTask[]>(TASKBANK_KEY, []));
   const [trainerTopic, setTrainerTopic] = useState<number | null>(null);
   const [solvedTaskIds, setSolvedTaskIds] = useState<string[]>([]);
+  const [publishedVariants, setPublishedVariants] = useState<PublishedVariant[]>(() =>
+    read<PublishedVariant[]>(PUBLISHED_KEY, [])
+  );
+  const [activeVariant, setActiveVariant] = useState<PublishedVariant | null>(null);
   const justSwitched = useRef(false);
 
   /* загрузка данных при смене пользователя — демо-набор только у «artom» */
@@ -401,6 +420,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const celebrate = useCallback(() => setBurst((b) => b + 1), []);
 
+  /* персист опубликованных вариантов (общие для всех на этом устройстве) */
+  useEffect(() => { write(PUBLISHED_KEY, publishedVariants); }, [publishedVariants]);
+
+  /* ── авторские варианты ── */
+  const publishVariant = useCallback((v: ParsedVariant): PublishedVariant => {
+    const full: PublishedVariant = {
+      ...v,
+      id: `pv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      linkCode: makeLinkCode(),
+      publishedAt: new Date().toISOString(),
+      authorName: user?.name ?? "Преподаватель",
+    };
+    setPublishedVariants((prev) => [full, ...prev]);
+    return full;
+  }, [user]);
+
+  const unpublishVariant = useCallback((id: string) => {
+    setPublishedVariants((prev) => prev.filter((v) => v.id !== id));
+  }, []);
+
+  const runPublishedVariant = useCallback((code: string): boolean => {
+    const v = publishedVariants.find((x) => x.linkCode === code || x.id === code) ?? null;
+    if (!v) return false;
+    setActiveVariant(v);
+    setRoute("variant-run");
+    window.scrollTo({ top: 0 });
+    return true;
+  }, [publishedVariants]);
+
+  /** Привязка ученика к преподавателю по коду приглашения. */
+  const attachTeacher = useCallback((code: string): { ok: boolean; teacherName?: string } => {
+    const teacherName = resolveTeacher(code);
+    if (!teacherName) return { ok: false };
+    const codeUp = code.trim().toUpperCase();
+    setUser((prev) => {
+      if (!prev) return prev;
+      const merged = { ...prev, teacherCode: codeUp, teacherName };
+      saveSession(merged);
+      return merged;
+    });
+    return { ok: true, teacherName };
+  }, []);
+
+  /** Записать результат авторского варианта (работает и в автономном режиме). */
+  const recordPublishedAttempt = useCallback((label: string, primary: number, secondary: number, mistakes: number) => {
+    registerSolve();
+    setAttempts((prev) => [...prev, {
+      id: `ca-${Date.now()}`,
+      variantId: `custom:${label}`,
+      label,
+      secondary,
+      mistakes,
+      date: todayShort(),
+    }]);
+    void primary;
+  }, [registerSolve]);
+
   const importTasks = useCallback((list: CustomTask[]) => {
     let added = 0, skipped = 0;
     setTaskBank((prev) => {
@@ -423,6 +499,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     variantId, lastResult, nightOwl, probBest,
     streak, todaySolved, taskBank,
     trainerTopic, solvedTaskIds, openTrainer, markTaskSolved, celebrate,
+    publishedVariants, activeVariant, publishVariant, unpublishVariant, runPublishedVariant, attachTeacher, recordPublishedAttempt,
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,

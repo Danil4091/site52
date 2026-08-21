@@ -9,6 +9,8 @@ import {
 import { useApp, type CustomTask } from "./store";
 import { ACHIEVEMENTS, BANK, LEADER_SEED, type AchieveSnapshot } from "./data";
 import { Avatar, Heatmap, LatexText } from "./ui";
+import VariantUploader from "./VariantUploader";
+import { variantLink } from "./variantSchema";
 
 /* ═══════════════════════ АНАЛИТИКА ═══════════════════════ */
 export function AnalyticsPage() {
@@ -309,9 +311,9 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
 }
 
 export function AdminPage() {
-  const { user, taskBank, addTask, removeTask, importTasks, pushToast } = useApp();
+  const { user, taskBank, addTask, removeTask, importTasks, pushToast, publishedVariants, unpublishVariant, runPublishedVariant } = useApp();
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("komi-admin") === "1");
-  const [tab, setTab] = useState<"bank" | "import" | "students">("bank");
+  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students">("bank");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [importText, setImportText] = useState("");
@@ -386,7 +388,7 @@ export function AdminPage() {
       <h1 className="rise rise-1 mt-2 font-display text-3xl font-bold tracking-tight text-chalk-50 sm:text-4xl">{user?.name ?? "Администратор"}</h1>
 
       <div className="rise rise-2 mt-6 flex flex-wrap gap-1.5">
-        {([["bank", "Банк задач"], ["import", "Импорт JSON"], ["students", "Ученики"]] as ["bank" | "import" | "students", string][]).map(([k, l]) => (
+        {([["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"], ["students", "Ученики"]] as ["bank" | "import" | "variants" | "students", string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {l}
@@ -500,6 +502,38 @@ export function AdminPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "variants" && (
+        <div className="mt-5 space-y-6">
+          {/* опубликованные варианты */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50"><Sparkles className="h-4 w-4 text-mark-yellow" />Опубликованные варианты</h2>
+              <span className="text-[12px] font-semibold text-chalk-400">всего: <b className="text-chalk-50">{publishedVariants.length}</b></span>
+            </div>
+            {publishedVariants.length === 0 ? (
+              <p className="mt-3 text-[12.5px] text-chalk-500">Пока нет опубликованных вариантов — загрузите .json ниже.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-board-700/60">
+                {publishedVariants.map((v) => (
+                  <li key={v.id} className="card-hover flex flex-wrap items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-bold text-chalk-50">{v.variantTitle}</p>
+                      <p className="text-[10.5px] text-chalk-500">{v.tasks.length} задач · код <b className="font-mono text-mark-yellow">{v.linkCode}</b> · {new Date(v.publishedAt).toLocaleDateString("ru-RU")}</p>
+                    </div>
+                    <button onClick={() => runPublishedVariant(v.linkCode)} className="btn-ghost px-3 py-1.5 text-[11.5px]">Открыть</button>
+                    <button onClick={() => { navigator.clipboard?.writeText(variantLink(v.linkCode)); pushToast(`Ссылка ${v.linkCode} скопирована`); }} className="btn-ghost px-3 py-1.5 text-[11.5px]"><Copy className="h-3 w-3" />Ссылка</button>
+                    <button onClick={() => { unpublishVariant(v.id); pushToast("Вариант снят с публикации"); }} className="btn-ghost px-3 py-1.5 text-[11.5px] !text-mark-red hover:!border-mark-red/50"><Trash2 className="h-3 w-3" /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* загрузчик */}
+          <VariantUploader />
         </div>
       )}
 
