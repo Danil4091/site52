@@ -1,17 +1,67 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eraser, Eye, Info,
+  ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eraser, Eye, Flame, Info,
   Lightbulb, MinusCircle, Play, Sparkles, Target, Timer, XCircle,
 } from "lucide-react";
 import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
 import { useApp, type CustomTask, type ExamResult } from "./store";
 import {
-  BANK, PROB_PROBLEMS, REAL_VARIANT, TASK_OF_DAY, VARIANTS, answersMatch, daysUntilExam, greeting,
+  BANK, PROB_PROBLEMS, REAL_VARIANT, VARIANTS, answersMatch, daysUntilExam, getDailyTip, greeting,
 } from "./data";
 import { AnswerInput, Heatmap, LatexText, Sparkline, StreakFlame, TaskImage, XpBar } from "./ui";
 import { FloatingFormulas, useTypewriter } from "./shell";
 
 /* ═══════════════════════ ГЛАВНАЯ ═══════════════════════ */
+
+interface DailyTask {
+  number: number;
+  topic: string;
+  statement: string;
+  answer: string;
+  explain?: string;
+}
+
+/**
+ * «Задача дня» — случайная задача из всего пула первой части:
+ * реальные задания варианта + тренажёр вероятностей + банк,
+ * загруженный преподавателем. Выбор детерминирован по номеру дня:
+ * каждый день — новая задача, в течение суток одна и та же.
+ */
+function useTaskOfDay(): DailyTask | null {
+  const { taskBank } = useApp();
+  return useMemo(() => {
+    const pool: DailyTask[] = [];
+    for (const t of REAL_VARIANT) {
+      if (t.part === 1 && t.answer) pool.push({ number: t.number, topic: t.category, statement: t.statement, answer: t.answer, explain: t.solution });
+    }
+    for (const p of PROB_PROBLEMS) {
+      pool.push({ number: /сложная/i.test(p.topic) ? 5 : 4, topic: p.topic, statement: p.text, answer: p.answer, explain: p.explain });
+    }
+    for (const t of taskBank) {
+      if (t.exam_type === "ege" && !t.is_second_part && t.correct_answer) {
+        pool.push({ number: t.task_number, topic: t.topic, statement: t.condition_text, answer: t.correct_answer, explain: t.solution_text ?? undefined });
+      }
+    }
+    if (!pool.length) return null;
+    const dayIndex = Math.floor(Date.now() / 86_400_000);
+    return pool[dayIndex % pool.length];
+  }, [taskBank]);
+}
+
+/** Прогноз балла: экстраполяция среднего прироста за последние попытки. */
+function useForecast(seconds: number[]): number | null {
+  return useMemo(() => {
+    if (seconds.length < 3) return null;
+    const recent = seconds.slice(-5);
+    const deltas: number[] = [];
+    for (let i = 1; i < recent.length; i++) deltas.push(recent[i] - recent[i - 1]);
+    const avgDelta = deltas.reduce((s, d) => s + d, 0) / deltas.length;
+    const last = recent[recent.length - 1];
+    /* прогноз на ~3 варианта вперёд, ограничиваем диапазоном */
+    return Math.max(0, Math.min(100, Math.round(last + avgDelta * 3)));
+  }, [seconds]);
+}
+
 export function HomePage() {
   const { user, attempts, topicStats, mistakes, go, startVariant, streak, todaySolved } = useApp();
   const days = daysUntilExam();
@@ -22,6 +72,11 @@ export function HomePage() {
     return s && s.attempts > 0 && s.solved / s.attempts < 0.5;
   });
   const spark = attempts.slice(-10).map((a) => a.secondary);
+  const forecast = useForecast(attempts.map((a) => a.secondary));
+  const taskOfDay = useTaskOfDay();
+  const dailyTip = getDailyTip();
+  /* серия есть, но сегодня ещё ни одной задачи — серия может сгореть */
+  const streakAtRisk = streak.days > 0 && !todaySolved;
   const { out } = useTypewriter(user ? `Продолжаем, @${user.nickname}? Балл сам себя не поднимет.` : "Решай. Разбирай ошибки. Расти.");
 
   return (
@@ -57,6 +112,24 @@ export function HomePage() {
             <p className="mt-1 max-w-xs text-[13px] font-semibold leading-snug text-chalk-300">{out}<span className="caret" /></p>
           </div>
         </div>
+
+        {/* серия под угрозой — решающий момент удержания */}
+        {streakAtRisk && (
+          <div className="rise rise-1 mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-mark-red/40 bg-mark-red/10 px-5 py-4">
+            <Flame className="flame-live h-6 w-6 shrink-0 text-mark-red" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] font-bold text-mark-red">Серия {streak.days} {streak.days === 1 ? "день" : "дней"} под угрозой!</p>
+              <p className="text-[12px] text-chalk-300">Сегодня ещё не решено ни одной задачи — реши хотя бы одну, чтобы не потерять прогресс.</p>
+            </div>
+            <button
+              onClick={() => go(firstWeak ? "trainer" : "probability")}
+              className="btn-gold shrink-0 px-4 py-2.5 text-[12.5px]"
+            >
+              {firstWeak ? `Тренировать №${firstWeak.number}` : "Решить задачу"}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* bento */}
         <div className="mt-4 grid grid-cols-12 gap-4">
@@ -94,12 +167,17 @@ export function HomePage() {
             <Heatmap stats={topicStats} />
           </div>
 
-          {/* задача дня */}
+          {/* задача дня — случайная из всего банка части 1 */}
           <div className="rise rise-3 card col-span-12 p-5 md:col-span-5">
             <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50">
-              <Sparkles className="h-4 w-4 text-mark-yellow" /> Задача дня · №{TASK_OF_DAY.number} {TASK_OF_DAY.topic}
+              <Sparkles className="h-4 w-4 text-mark-yellow" />
+              {taskOfDay ? `Задача дня · №${taskOfDay.number} ${taskOfDay.topic}` : "Задача дня"}
             </h2>
-            <TaskOfDayBlock />
+            {taskOfDay ? (
+              <TaskOfDayBlock task={taskOfDay} />
+            ) : (
+              <p className="mt-2.5 text-[12.5px] text-chalk-500">Задачи части 1 появятся здесь — загрузите банк в кабинете преподавателя.</p>
+            )}
           </div>
 
           {/* продолжить */}
@@ -131,6 +209,21 @@ export function HomePage() {
             ) : (
               <p className="mt-2 text-[11.5px] leading-relaxed text-chalk-500">Решите два варианта — здесь появится график роста.</p>
             )}
+            {forecast !== null && (
+              <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-mark-blue/25 bg-mark-blue/5 px-2.5 py-2 text-[11px] font-semibold text-mark-blue" title="Экстраполяция по приросту за последние 5 попыток — на ~3 варианта вперёд">
+                <Target className="h-3.5 w-3.5 shrink-0" />
+                Прогноз: <b className="tabular-nums">{forecast}</b> через 3 варианта
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* совет дня */}
+        <div className="rise rise-5 mt-4 flex items-start gap-3 rounded-xl border border-board-600/50 bg-board-850/70 px-5 py-4">
+          <Lightbulb className="mt-0.5 h-5 w-5 shrink-0 text-mark-yellow" />
+          <div>
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.2em] text-chalk-500">Совет дня</p>
+            <p className="mt-1 text-[13px] font-medium leading-relaxed text-chalk-200">{dailyTip}</p>
           </div>
         </div>
       </div>
@@ -138,20 +231,22 @@ export function HomePage() {
   );
 }
 
-function TaskOfDayBlock() {
+function TaskOfDayBlock({ task }: { task: DailyTask }) {
   const { recordAnswer } = useApp();
   const [input, setInput] = useState("");
   const [verdict, setVerdict] = useState<null | boolean>(null);
   const [revealed, setRevealed] = useState(false);
   const check = () => {
     if (!input.trim()) return;
-    const ok = answersMatch(input, TASK_OF_DAY.answer);
+    const ok = answersMatch(input, task.answer);
     setVerdict(ok);
-    recordAnswer(TASK_OF_DAY.number, ok);
+    recordAnswer(task.number, ok);
   };
   return (
     <>
-      <p className="mt-2.5 text-[13px] leading-relaxed text-chalk-300">{TASK_OF_DAY.statement}</p>
+      <p className="mt-2.5 text-[13px] leading-relaxed text-chalk-300">
+        <LatexText text={task.statement} />
+      </p>
       <div className="mt-3 flex gap-2">
         <AnswerInput label="Задача дня" value={input} onChange={(v) => { setInput(v); setVerdict(null); }} onSubmit={check} placeholder="Ответ" className="!py-2 !text-[14px]" />
         <button onClick={check} className="btn-gold shrink-0 px-4 py-2 text-[12.5px]">ОК</button>
@@ -164,7 +259,11 @@ function TaskOfDayBlock() {
       <button onClick={() => setRevealed((r) => !r)} className="mt-2 text-[11.5px] font-bold text-mark-blue transition-colors hover:text-chalk-50">
         {revealed ? "Скрыть решение" : "Показать решение"}
       </button>
-      {revealed && <p className="pop-in mt-1.5 rounded-lg border border-mark-yellow/25 bg-mark-yellow/5 p-2.5 text-[12px] leading-relaxed text-chalk-300">{TASK_OF_DAY.explain}</p>}
+      {revealed && task.explain && (
+        <p className="pop-in mt-1.5 rounded-lg border border-mark-yellow/25 bg-mark-yellow/5 p-2.5 text-[12px] leading-relaxed text-chalk-300">
+          <LatexText text={task.explain} />
+        </p>
+      )}
     </>
   );
 }

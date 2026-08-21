@@ -5,8 +5,9 @@
 
 const env = import.meta.env as Record<string, string | undefined>;
 
-/* ── Дата ЕГЭ (задача: вынести в .env, VITE_EGE_DATE) ── */
-export const EGE_DATE_ISO: string = env.VITE_EGE_DATE ?? "2026-06-07";
+/* ── Дата ЕГЭ (задача: вынести в .env, VITE_EGE_DATE) ──
+   Ориентировочно — 7 июня 2027 (уточняется ФИПИ). */
+export const EGE_DATE_ISO: string = env.VITE_EGE_DATE ?? "2027-06-07";
 
 /** Дата ЕГЭ как объект (локальное время, 10:00). */
 export const EGE_DATE: Date = new Date(`${EGE_DATE_ISO}T10:00:00`);
