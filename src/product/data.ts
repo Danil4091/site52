@@ -6,9 +6,12 @@ import {
   CalendarCheck, ClipboardList, Crown, Crosshair, Eraser, Flame, Footprints, Moon, Star,
   Target, Timer, TrendingUp, Zap,
 } from "lucide-react";
+import { EGE_DATE } from "./config";
 
 export const STUDENT = { name: "Артём", fullName: "Артём Попов", grade: "11 класс", city: "Сыктывкар", streak: 6, goal: 84 };
-export const EXAM_DATE = new Date("2026-06-04T10:00:00+03:00");
+
+/** Дата ЕГЭ — берётся из конфигурации (VITE_EGE_DATE, по умолчанию 7 июня 2026). */
+export const EXAM_DATE = EGE_DATE;
 
 export interface ProductVariant {
   id: string; year: number; title: string; region: string;

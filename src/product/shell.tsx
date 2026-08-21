@@ -139,10 +139,10 @@ export function Header() {
             <>
               <span className="hidden items-center gap-2.5 rounded-full border border-board-600/70 bg-board-800/60 py-1 pl-1 pr-3.5 sm:flex">
                 <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${user.role === "teacher" ? "bg-mark-yellow text-board-950" : "bg-board-600 text-chalk-50"}`}>
-                  {user.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                  {user.nickname.slice(0, 2).toUpperCase()}
                 </span>
                 <span className="text-left">
-                  <span className="block text-[12px] font-bold leading-tight text-chalk-50">{user.name.split(" ")[0]}</span>
+                  <span className="block text-[12px] font-bold leading-tight text-chalk-50">@{user.nickname}</span>
                   <span className="block text-[9.5px] font-medium text-chalk-500">{user.role === "teacher" ? "преподаватель" : "ученик"}</span>
                 </span>
               </span>

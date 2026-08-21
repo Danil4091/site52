@@ -1,24 +1,49 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, GraduationCap, KeyRound, LogIn, UserPlus, X } from "lucide-react";
 import { useApp, loadSession, type ProductUser } from "./store";
+import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_PASSWORD, ADMIN_TEACHER_CODE } from "./config";
+import { resolveTeacher } from "./variantSchema";
+import { isApiEnabled } from "./api";
 import type { LegalDoc } from "./LegalDocs";
 
 type StoredUser = ProductUser & { password: string };
 
-const SEED: StoredUser[] = [
-  { name: "Артём Попов", nickname: "artom", email: "artom@komi.ru", password: "1234", role: "student", grade: "11 класс", goal: 84 },
-  { name: "Даниил Пудов", nickname: "daniil_komi", email: "teacher@komi.ru", password: "1234", role: "teacher" },
-];
+const USERS_KEY = "komi-users-v1";
 
+/**
+ * Чистая авторизация (без демо-кнопок).
+ * Вход: ник + пароль. Регистрация: ник, пароль, подтверждение, опц. код преподавателя.
+ * В автономном режиме мастер-аккаунт преподавателя создаётся автоматически
+ * (в продакшене это делает backend/scripts/create_admin.py из серверного .env).
+ */
 function loadUsers(): StoredUser[] {
   try {
-    const raw = localStorage.getItem("komi-users-v1");
+    const raw = localStorage.getItem(USERS_KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      if (Array.isArray(p) && p.length) return p;
+      if (Array.isArray(p)) return p;
     }
   } catch { /* ок */ }
-  return SEED;
+  return [];
+}
+
+function saveUsers(users: StoredUser[]) {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch { /* ок */ }
+}
+
+/** Автосид мастер-аккаунта преподавателя (только автономный режим). */
+function seedAdminIfNeeded() {
+  if (isApiEnabled()) return; // в продакшене — backend-скрипт
+  const users = loadUsers();
+  if (users.some((u) => u.nickname === ADMIN_NICKNAME && u.role === "teacher")) return;
+  users.push({
+    nickname: ADMIN_NICKNAME,
+    name: ADMIN_DISPLAY_NAME,
+    role: "teacher",
+    password: ADMIN_PASSWORD,
+    teacherCode: ADMIN_TEACHER_CODE,
+  });
+  saveUsers(users);
 }
 
 export default function AuthModal({
@@ -34,16 +59,18 @@ export default function AuthModal({
 }) {
   const { login } = useApp();
   const [tab, setTab] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [name, setName] = useState("");
   const [nickname, setNickname] = useState("");
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [invite, setInvite] = useState("");
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* автоподхват реферального кода преподавателя из URL: ?ref=TEACHER123 */
+  /* при первом открытии — гарантируем мастер-аккаунт преподавателя */
+  useEffect(() => { seedAdminIfNeeded(); }, []);
+
+  /* автоподхват реферального кода преподавателя из URL: ?ref=ARTEM-PRO */
   useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (ref && ref.trim()) {
@@ -53,7 +80,7 @@ export default function AuthModal({
   }, []);
 
   useEffect(() => {
-    if (open) { setTab("login"); setError(null); setConsent(false); }
+    if (open) { setTab("login"); setError(null); setConsent(false); setPassword2(""); }
   }, [open]);
 
   useEffect(() => {
@@ -67,40 +94,45 @@ export default function AuthModal({
   const field =
     "w-full rounded-lg border-2 border-board-600/70 bg-board-800/60 px-3.5 py-2.5 text-sm font-medium text-chalk-50 outline-none transition-all duration-200 placeholder:text-chalk-500 focus:border-mark-yellow focus:bg-board-800 focus:ring-4 focus:ring-mark-yellow/10";
 
+  const cleanNick = (v: string) => v.trim().replace(/^@/, "").toLowerCase();
+
   const submit = () => {
     setError(null);
     const users = loadUsers();
+    const nick = cleanNick(nickname);
+
     if (tab === "login") {
-      const found = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
-      if (!found) { setError("Неверный e-mail или пароль. Для демо: artom@komi.ru / 1234"); return; }
+      if (!nick) { setError("Введите ник"); return; }
+      const found = users.find((u) => u.nickname === nick && u.password === password);
+      if (!found) { setError("Неверный ник или пароль"); return; }
       const { password: _pw, ...rest } = found;
       login(rest);
       onClose();
       return;
     }
-    if (name.trim().length < 2) { setError("Укажите имя — минимум 2 символа"); return; }
-    const nick = nickname.trim().replace(/^@/, "").toLowerCase();
-    if (!nick) { setError("Укажите ник — именно он, а не имя, будет виден в рейтинге"); return; }
-    if (!/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
-    const finalNick = nick;
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError("Похоже, в e-mail опечатка"); return; }
-    if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
-    if (!consent) { setError("Необходимо согласие на обработку персональных данных и условия соглашения"); return; }
-    if (users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) { setError("Такой e-mail уже зарегистрирован — войдите"); return; }
-    const code = invite.trim().toUpperCase();
-    const user: StoredUser = {
-      name: name.trim(), nickname: finalNick, email: email.trim().toLowerCase(), password, role: "student",
-      teacherCode: code || undefined, teacherName: code ? "Даниил Пудов" : undefined,
-      consentVersion: "1.0", consentAt: new Date().toISOString(),
-    };
-    try { localStorage.setItem("komi-users-v1", JSON.stringify([...users, user])); } catch { /* ок */ }
-    const { password: _pw, ...rest } = user;
-    login(rest);
-    onClose();
-  };
 
-  const quick = (u: StoredUser) => {
-    const { password: _pw, ...rest } = u;
+    /* ── регистрация ── */
+    if (!nick) { setError("Укажите ник — именно он будет виден в рейтинге"); return; }
+    if (!/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
+    if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
+    if (password !== password2) { setError("Пароли не совпадают"); return; }
+    if (!consent) { setError("Необходимо согласие на обработку персональных данных"); return; }
+    if (users.some((u) => u.nickname === nick)) { setError("Такой ник уже занят — войдите или выберите другой"); return; }
+
+    const code = invite.trim().toUpperCase();
+    const teacherName = code ? resolveTeacher(code) : null;
+
+    const user: StoredUser = {
+      nickname: nick,
+      role: "student",
+      password,
+      teacherCode: code || undefined,
+      teacherName: teacherName ?? undefined,
+      consentVersion: "1.0",
+      consentAt: new Date().toISOString(),
+    };
+    saveUsers([...users, user]);
+    const { password: _pw, ...rest } = user;
     login(rest);
     onClose();
   };
@@ -115,7 +147,7 @@ export default function AuthModal({
             </span>
             <div>
               <h2 className="font-display text-lg font-bold tracking-tight text-chalk-50">Репетитор из Коми</h2>
-              <p className="text-[11px] text-chalk-500">личная история попыток и баллы</p>
+              <p className="text-[11px] text-chalk-500">{tab === "login" ? "вход по нику и паролю" : "создание аккаунта"}</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-chalk-500 transition-colors hover:bg-board-700 hover:text-chalk-50" aria-label="Закрыть">
@@ -134,26 +166,53 @@ export default function AuthModal({
         </div>
 
         <div className="mt-4 space-y-3">
-          {tab === "register" && (
-            <>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя и фамилия" className={field} aria-label="Имя" />
-              <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ник для рейтинга (виден всем) — например masha_2026" className={field} aria-label="Ник для рейтинга" />
-              <p className="-mt-1.5 text-[10.5px] leading-snug text-chalk-500">Имя и фамилия нужны только для кабинета преподавателя — в публичном рейтинге отображается только ник.</p>
-            </>
-          )}
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" type="email" className={field} aria-label="E-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
+          <input
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="Никнейм — например masha_2026"
+            className={field}
+            aria-label="Никнейм"
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
           <div className="relative">
-            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Пароль" type={showPw ? "text" : "password"} className={`${field} pr-11`} aria-label="Пароль" onKeyDown={(e) => e.key === "Enter" && submit()} />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Пароль"
+              type={showPw ? "text" : "password"}
+              className={`${field} pr-11`}
+              aria-label="Пароль"
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
             <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-chalk-500 transition-colors hover:text-chalk-200" aria-label={showPw ? "Скрыть пароль" : "Показать пароль"}>
               {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
+
           {tab === "register" && (
             <>
+              <input
+                value={password2}
+                onChange={(e) => setPassword2(e.target.value)}
+                placeholder="Повторите пароль"
+                type={showPw ? "text" : "password"}
+                className={field}
+                aria-label="Подтверждение пароля"
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+              />
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-chalk-500" />
-                <input value={invite} onChange={(e) => setInvite(e.target.value.toUpperCase())} placeholder="Код преподавателя (если есть) — KOMI-2026" className={`${field} pl-9 font-mono tracking-wider`} aria-label="Код преподавателя" />
+                <input
+                  value={invite}
+                  onChange={(e) => setInvite(e.target.value.toUpperCase())}
+                  placeholder="Код преподавателя (необязательно)"
+                  className={`${field} pl-9 font-mono tracking-wider`}
+                  aria-label="Код преподавателя"
+                />
               </div>
+              <p className="-mt-1.5 text-[10.5px] leading-snug text-chalk-500">
+                Введите код вашего репетитора для проверки 2-й части. Без кода вы работаете в бесплатном автономном режиме.
+              </p>
               <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-board-600/70 bg-board-800/40 px-3 py-2.5 transition-colors hover:border-board-600">
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-mark-yellow" />
                 <span className="text-[11.5px] leading-relaxed text-chalk-300">
@@ -165,6 +224,7 @@ export default function AuthModal({
               </label>
             </>
           )}
+
           {tab === "login" && (
             <button type="button" onClick={onForgot} className="text-[11.5px] font-semibold text-mark-blue transition-colors hover:text-chalk-50">
               Забыли пароль?
@@ -177,18 +237,6 @@ export default function AuthModal({
         <button onClick={submit} className="mt-5 w-full rounded-lg bg-mark-yellow py-3 text-sm font-bold text-board-950 shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98]">
           {tab === "login" ? "Войти" : "Создать аккаунт"}
         </button>
-
-        <div className="mt-5 border-t border-dashed border-board-600/70 pt-4">
-          <p className="text-center text-[10.5px] font-bold uppercase tracking-[0.18em] text-chalk-500">демо-доступ в один клик</p>
-          <div className="mt-2.5 grid grid-cols-2 gap-2">
-            <button onClick={() => quick(SEED[0])} className="rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2.5 text-[12px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-green/50 hover:text-mark-green active:scale-[0.98]">
-              Артём · ученик
-            </button>
-            <button onClick={() => quick(SEED[1])} className="rounded-lg border border-board-600/70 bg-board-800/60 px-3 py-2.5 text-[12px] font-bold text-chalk-300 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-[0.98]">
-              Даниил · преподаватель
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

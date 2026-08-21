@@ -10,9 +10,16 @@ import {
 } from "./variantSchema";
 
 export interface ProductUser {
-  name: string; nickname: string; email: string; role: "student" | "teacher";
+  /** Ник — единственный публичный идентификатор (виден в рейтинге). */
+  nickname: string;
+  role: "student" | "teacher";
+  /** Имя и e-mail — опциональны, не показываются публично. */
+  name?: string;
+  email?: string;
   grade?: string; goal?: number; weakTopic?: string;
   teacherCode?: string; teacherName?: string;
+  /** ID преподавателя, к которому привязан ученик (для проверки 2-й части). */
+  teacherId?: string;
   consentVersion?: string; consentAt?: string;
   /** Для будущего Telegram-бота: напоминания о стриках, мини-тесты. */
   telegram_id?: string;
@@ -276,7 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback((u: ProductUser) => {
     saveSession(u);
     setUser(u);
-    pushToast(u.role === "teacher" ? `С возвращением, ${u.name.split(" ")[0]}! Кабинет открыт` : `Добро пожаловать, ${u.name.split(" ")[0]}!`);
+    pushToast(u.role === "teacher" ? `С возвращением, @${u.nickname}! Кабинет открыт` : `Добро пожаловать, @${u.nickname}!`);
     if (u.role === "teacher") setRoute("admin");
   }, [pushToast]);
 

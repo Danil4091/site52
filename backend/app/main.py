@@ -37,6 +37,11 @@ HMAC_SECRET = os.getenv("HMAC_SECRET") or os.getenv("SECRET_KEY") or "dev-secret
 SECRET_KEY = HMAC_SECRET
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
+# Мастер-аккаунт преподавателя (создаётся автоматически при старте).
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "artem")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "artem-2026")
+ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "ARTEM-PRO")
+
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -46,10 +51,44 @@ async def get_db():
         yield s
 
 
+async def ensure_admin() -> None:
+    """Автоматически гарантирует наличие мастер-аккаунта преподавателя (Артём).
+
+    Вызывается при старте. Идемпотентна: существующий аккаунт не пересоздаётся,
+    но роль и код привязки поддерживаются в актуальном состоянии.
+    """
+    from .models import User, UserRole
+
+    async with Session() as db:
+        existing = (
+            await db.execute(select(User).where(User.nickname == ADMIN_USERNAME))
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.role = UserRole.TEACHER
+            existing.teacher_code = ADMIN_TEACHER_CODE
+            await db.commit()
+            return
+        db.add(
+            User(
+                email=f"{ADMIN_USERNAME}@repetitor.local",
+                password_hash=ADMIN_PASSWORD,  # в проде — bcrypt
+                full_name="Артём",
+                nickname=ADMIN_USERNAME,
+                role=UserRole.TEACHER,
+                teacher_code=ADMIN_TEACHER_CODE,
+            )
+        )
+        await db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    try:
+        await ensure_admin()
+    except Exception as exc:  # не даём сбою сида уронить запуск API
+        print(f"[startup] не удалось создать мастер-аккаунт: {exc}")
     yield
 
 
@@ -106,11 +145,14 @@ class ImportReport(BaseModel):
 
 
 class RegisterIn(BaseModel):
-    email: str
+    email: Optional[str] = None
     password: str
-    full_name: str
+    full_name: Optional[str] = None
     nickname: str = Field(min_length=2, max_length=32)
     telegram_id: Optional[int] = None  # задел под Telegram-бота
+    # Опциональный код преподавателя: если задан и найден — ученик
+    # привязывается к преподавателю (teacher_id) для проверки 2-й части.
+    teacher_code: Optional[str] = None
 
 
 # ─────────────────────────── здоровье ───────────────────────────

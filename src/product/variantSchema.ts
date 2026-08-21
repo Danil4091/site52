@@ -155,15 +155,16 @@ export function variantLink(code: string): string {
 
 /** code → имя преподавателя. Преподаватель может добавить свои коды. */
 export const TEACHER_CODES: Record<string, string> = {
-  "KOMI-2026": "Даниил Пудов",
-  "PROBNIK-7": "Даниил Пудов",
+  "ARTEM-PRO": "Артём",
+  "KOMI-2026": "Артём",
+  "PROBNIK-7": "Артём",
 };
 
 export function resolveTeacher(code: string): string | null {
   const c = code.trim().toUpperCase();
   if (TEACHER_CODES[c]) return TEACHER_CODES[c];
-  /* любые коды формата KOMI-… считаем кодами основного преподавателя (демо) */
-  if (/^KOMI-[A-Z0-9]{3,8}$/.test(c)) return "Даниил Пудов";
+  /* любые коды формата KOMI-… / ARTEM-… считаем кодами основного преподавателя */
+  if (/^(KOMI|ARTEM)-[A-Z0-9]{3,8}$/.test(c)) return "Артём";
   return null;
 }
 

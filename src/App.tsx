@@ -9,6 +9,7 @@ import { ConfettiBurst, FieldDockProvider } from "./product/ui";
 import AuthModal from "./product/AuthModal";
 import LegalModal, { type LegalDoc } from "./product/LegalDocs";
 import ForgotPasswordModal from "./product/ForgotPassword";
+import VkContactWidget from "./product/VkContactWidget";
 
 export default function App() {
   const { route, burst, runPublishedVariant } = useApp();
@@ -65,6 +66,9 @@ export default function App() {
           {route === "admin" && <AdminPage />}
           {route === "achieve" && <RatingPage />}
         </main>
+
+        {/* Виджет обратной связи ВК — скрыт во время решения варианта и в кабинете */}
+        {route !== "run" && route !== "variant-run" && route !== "admin" && <VkContactWidget />}
 
         <Footer />
         <MobileNav />

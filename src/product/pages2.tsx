@@ -372,11 +372,16 @@ export function AdminPage() {
     a.click();
   };
 
-  const students = [
-    { name: "Анна Морозова", nick: "anna_mz", city: "Ухта", last: 96, attempts: 14, streak: 12 },
-    { name: "Дмитрий Логачёв", nick: "dima_lg", city: "Сыктывкар", last: 79, attempts: 11, streak: 8 },
-    { name: "Мария Виткова", nick: "masha_vk", city: "Печора", last: 68, attempts: 9, streak: 5 },
-  ];
+  /* Реальные ученики, привязанные к этому преподавателю по коду (задача 5).
+     Читаются из локального хранилища аккаунтов; в продакшене — из БД по teacher_id. */
+  const myCode = (user?.teacherCode ?? "").toUpperCase();
+  const linkedStudents = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("komi-users-v1");
+      const users = raw ? (JSON.parse(raw) as { nickname: string; role: string; teacherCode?: string }[]) : [];
+      return users.filter((u) => u.role === "student" && (u.teacherCode ?? "").toUpperCase() === myCode && myCode !== "");
+    } catch { return []; }
+  }, [myCode, tab]);
 
   const field = "w-full rounded-lg border border-board-600/70 bg-board-950/50 px-3 py-2 text-[13px] text-chalk-50 outline-none transition-all placeholder:text-chalk-600 focus:border-mark-yellow";
   const label = "mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-chalk-500";
@@ -553,20 +558,25 @@ export function AdminPage() {
           </div>
           <div className="card p-5">
             <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50"><Users className="h-4 w-4 text-mark-green" />Мои ученики</h2>
-            <ul className="mt-3 divide-y divide-board-700/60">
-              {students.map((s) => (
-                <li key={s.nick} className="card-hover flex items-center gap-3 py-3">
-                  <Avatar name={s.name} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-bold text-chalk-50">{s.name} <span className="font-mono text-[10.5px] text-chalk-500">@{s.nick}</span></p>
-                    <p className="text-[10.5px] text-chalk-500">{s.city} · {s.attempts} попыток</p>
-                  </div>
-                  <span className="flex items-center gap-1 text-[11.5px] font-bold tabular-nums text-mark-red"><Flame className="h-3.5 w-3.5" />{s.streak}</span>
-                  <span className="rounded-lg bg-mark-yellow/12 px-2.5 py-1 font-display text-[14px] font-bold tabular-nums text-mark-yellow">{s.last}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 flex items-center gap-2 text-[11px] text-chalk-500"><Sparkles className="h-3.5 w-3.5 text-mark-yellow" />В демо — тестовые ученики. С бэкендом здесь реальная статистика и telegram_id.</p>
+            {linkedStudents.length === 0 ? (
+              <p className="mt-3 text-[12px] leading-relaxed text-chalk-500">
+                Пока никто не привязался. Отправьте ученикам код <b className="font-mono text-mark-yellow">{myCode || "—"}</b> — после регистрации с этим кодом их ники появятся здесь.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-board-700/60">
+                {linkedStudents.map((s) => (
+                  <li key={s.nickname} className="card-hover flex items-center gap-3 py-3">
+                    <Avatar name={s.nickname} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-[13px] font-bold text-chalk-50">@{s.nickname}</p>
+                      <p className="text-[10.5px] text-chalk-500">привязан по коду {myCode}</p>
+                    </div>
+                    <span className="rounded-lg bg-mark-green/12 px-2.5 py-1 text-[11px] font-bold text-mark-green">активен</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 flex items-center gap-2 text-[11px] text-chalk-500"><Sparkles className="h-3.5 w-3.5 text-mark-yellow" />В продакшене список берётся из БД по teacher_id, включая telegram_id учеников.</p>
           </div>
         </div>
       )}

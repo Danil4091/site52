@@ -57,6 +57,13 @@ class User(Base):
     nickname: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     role: Mapped[UserRole] = mapped_column(PyEnum(UserRole, name="user_role"), default=UserRole.STUDENT, nullable=False)
 
+    # Код, по которому ученики привязываются к этому преподавателю (только для teacher).
+    teacher_code: Mapped[Optional[str]] = mapped_column(String(24), unique=True)
+    # Преподаватель, к которому привязан ученик (только для student).
+    teacher_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
     # Задел под Telegram-бота: напоминания о стриках, мини-тесты.
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
 

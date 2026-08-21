@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, BookOpenCheck, CalendarDays, ChevronDown, ClipboardList, Eraser, Eye,
+  ArrowRight, BookOpenCheck, CalendarDays, ChevronDown, ClipboardList, Eraser, Eye, Info,
   Lightbulb, Play, Sparkles, Target, Timer,
 } from "lucide-react";
+import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
 import { useApp, type CustomTask } from "./store";
 import {
   BANK, PROB_PROBLEMS, REAL_VARIANT, TASK_OF_DAY, VARIANTS, answersMatch, daysUntilExam, greeting,
@@ -21,7 +22,7 @@ export function HomePage() {
     return s && s.attempts > 0 && s.solved / s.attempts < 0.5;
   });
   const spark = attempts.slice(-10).map((a) => a.secondary);
-  const { out } = useTypewriter(user ? `Продолжаем, ${user.name.split(" ")[0]}? Балл сам себя не поднимет.` : "Решай. Разбирай ошибки. Расти.");
+  const { out } = useTypewriter(user ? `Продолжаем, @${user.nickname}? Балл сам себя не поднимет.` : "Решай. Разбирай ошибки. Расти.");
 
   return (
     <div className="relative">
@@ -36,6 +37,15 @@ export function HomePage() {
             <p className="mt-1 flex items-baseline gap-2">
               <span className="font-display text-5xl font-bold leading-none tabular-nums text-chalk-50">{days}</span>
               <span className="text-sm font-semibold text-chalk-400">дней</span>
+            </p>
+            <p
+              className="mt-1.5 flex cursor-help items-center gap-1.5 text-[10.5px] font-medium text-chalk-500"
+              title={`${EGE_DATE_LABEL} · ${EGE_DATE_NOTE}`}
+            >
+              <CalendarDays className="h-3 w-3 shrink-0 text-mark-blue" />
+              {EGE_DATE_LABEL}
+              <Info className="h-3 w-3 shrink-0 text-chalk-500" />
+              <span className="hidden sm:inline">· {EGE_DATE_NOTE}</span>
             </p>
           </div>
           <div className="hidden h-12 w-px bg-board-700 sm:block" />

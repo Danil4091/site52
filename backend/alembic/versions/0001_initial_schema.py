@@ -45,6 +45,14 @@ def upgrade() -> None:
             nullable=False,
             server_default="student",
         ),
+        # Код привязки (для teacher) и ссылка на преподавателя (для student).
+        sa.Column("teacher_code", sa.String(24), unique=True, nullable=True),
+        sa.Column(
+            "teacher_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         # Задел под Telegram-бота: напоминания о стриках, мини-тесты.
         sa.Column("telegram_id", sa.BigInteger(), unique=True, nullable=True),
         # Стрики и XP (инкрементируются, если решена хотя бы одна задача за сутки).
