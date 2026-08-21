@@ -362,7 +362,7 @@ export function FieldDockProvider({ children }: { children: React.ReactNode }) {
     Принимает только цифры, «-», «,» и «.» — остальное отбрасывается. */
 export function AnswerInput({
   label, value, onChange, onSubmit, placeholder = "Ответ — только цифры, «-» и «,»",
-  autoFocus, invalid, className = "",
+  autoFocus, invalid, readOnly, className = "",
 }: {
   label: string;
   value: string;
@@ -371,6 +371,7 @@ export function AnswerInput({
   placeholder?: string;
   autoFocus?: boolean;
   invalid?: boolean;
+  readOnly?: boolean;
   className?: string;
 }) {
   const { register } = useFieldDock();
@@ -398,6 +399,7 @@ export function AnswerInput({
       value={value}
       onChange={(e) => onChange(sanitizeAnswer(e.target.value))}
       onFocus={() => {
+        if (readOnly) return; // заблокированное поле не подключает клавиатуру
         register({
           label,
           get: () => ref.current.value,
@@ -411,12 +413,15 @@ export function AnswerInput({
       placeholder={placeholder}
       inputMode="decimal"
       autoComplete="off"
-      autoFocus={autoFocus}
+      autoFocus={autoFocus && !readOnly}
+      readOnly={readOnly}
       aria-label={`Ответ: ${label}`}
       className={`w-full rounded-lg border-2 bg-board-950/50 px-4 py-3 font-mono text-lg font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[13px] placeholder:font-normal placeholder:text-chalk-500 focus:ring-4 ${
-        invalid
-          ? "shake border-mark-red focus:border-mark-red focus:ring-mark-red/10"
-          : "border-board-600/70 focus:border-mark-yellow focus:ring-mark-yellow/10"
+        readOnly
+          ? "cursor-default border-board-700/50 bg-board-900/40 text-chalk-300 opacity-70 focus:ring-0"
+          : invalid
+            ? "shake border-mark-red focus:border-mark-red focus:ring-mark-red/10"
+            : "border-board-600/70 focus:border-mark-yellow focus:ring-mark-yellow/10"
       } ${className}`}
     />
   );

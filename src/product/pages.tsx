@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, BookOpenCheck, CalendarDays, ChevronDown, ClipboardList, Eraser, Eye, Info,
-  Lightbulb, Play, Sparkles, Target, Timer,
+  ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eraser, Eye, Info,
+  Lightbulb, MinusCircle, Play, Sparkles, Target, Timer, XCircle,
 } from "lucide-react";
 import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
-import { useApp, type CustomTask } from "./store";
+import { useApp, type CustomTask, type ExamResult } from "./store";
 import {
   BANK, PROB_PROBLEMS, REAL_VARIANT, TASK_OF_DAY, VARIANTS, answersMatch, daysUntilExam, greeting,
 } from "./data";
@@ -328,27 +328,48 @@ export function RunPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [seconds, setSeconds] = useState(EXAM_SECONDS);
   const [current, setCurrent] = useState(1);
+  /* «Показать решение» раскрывается только в режиме разбора */
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  /* false = активное тестирование, true = разбор результатов */
+  const [review, setReview] = useState(false);
+  const [reviewResult, setReviewResult] = useState<ExamResult | null>(null);
 
   const part1 = REAL_VARIANT.filter((t) => t.part === 1);
   const task = REAL_VARIANT.find((t) => t.number === current)!;
   const answered = part1.filter((t) => (answers[t.number] ?? "").trim()).length;
-  const tense = seconds < 30 * 60;
+  const tense = !review && seconds < 30 * 60;
 
   useEffect(() => {
+    if (review) return; // в разборе таймер остановлен
     const id = setInterval(() => setSeconds((s) => (s <= 1 ? 0 : s - 1)), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [review]);
 
-  const finish = () => submitExam(answers, EXAM_SECONDS - seconds);
+  /* Переход в режим разбора: сохраняем попытку (без ухода со страницы),
+     фиксируем итоги и блокируем ответы. */
+  const finish = () => {
+    if (review) return;
+    const result = submitExam(answers, EXAM_SECONDS - seconds, { navigate: false });
+    setReviewResult(result);
+    setReview(true);
+    setRevealed({});
+    setCurrent(1);
+    window.scrollTo({ top: 0 });
+  };
 
-  /* время вышло — сдаём автоматически */
+  /* время вышло — автоматически переводим в разбор */
   useEffect(() => {
     if (seconds === 0) finish();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seconds]);
 
-  const setAns = (v: string) => setAnswers((a) => ({ ...a, [task.number]: v }));
+  const setAns = (v: string) => {
+    if (review) return; // в разборе ответы заблокированы
+    setAnswers((a) => ({ ...a, [task.number]: v }));
+  };
+
+  /* статус текущего задания в разборе */
+  const rowFor = (n: number) => reviewResult?.rows.find((r) => r.number === n);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-5">
@@ -356,21 +377,50 @@ export function RunPage() {
         <button onClick={() => go("variants")} className="btn-ghost px-3 py-2 text-[12.5px] !text-chalk-400 hover:!text-mark-red">← Выйти</button>
         <div>
           <h1 className="font-display text-lg font-bold text-chalk-50">Основной период · реальные задания</h1>
-          <p className="text-[11px] text-chalk-500">Отвечено {answered} из {part1.length} (часть 1)</p>
+          <p className="text-[11px] text-chalk-500">
+            {review ? "Режим разбора — ответы заблокированы" : `Отвечено ${answered} из ${part1.length} (часть 1)`}
+          </p>
         </div>
-        <span className={`ml-auto flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-sm font-bold tabular-nums ${tense ? "border-mark-red/50 bg-mark-red/10 text-mark-red" : "border-board-600/70 bg-board-800/60 text-chalk-100"}`}>
-          <Timer className="h-4 w-4" />{fmt(seconds)}
+        <span className={`ml-auto flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-sm font-bold tabular-nums ${review ? "border-board-600/70 bg-board-800/60 text-chalk-400" : tense ? "border-mark-red/50 bg-mark-red/10 text-mark-red" : "border-board-600/70 bg-board-800/60 text-chalk-100"}`}>
+          <Timer className="h-4 w-4" />{review ? "—" : fmt(seconds)}
         </span>
-        <button onClick={finish} className="btn-gold px-4 py-2 text-[13px]">Завершить</button>
+        {review ? (
+          <button onClick={() => go("results")} className="btn-gold px-4 py-2 text-[13px]">К полным результатам</button>
+        ) : (
+          <button onClick={finish} className="btn-gold px-4 py-2 text-[13px]">Завершить</button>
+        )}
       </div>
+
+      {/* Итоговая статистика — только в режиме разбора */}
+      {review && reviewResult && (
+        <div className="pop-in mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: "Первичный балл", value: `${reviewResult.primary} / ${part1.length}`, accent: "text-mark-yellow" },
+            { label: "Тестовый балл", value: String(reviewResult.secondary), accent: "text-mark-green" },
+            { label: "Верно", value: String(reviewResult.correct), accent: "text-mark-green" },
+            { label: "Неверно / пропуск", value: `${reviewResult.incorrect} / ${reviewResult.skipped}`, accent: "text-mark-red" },
+          ].map((s) => (
+            <div key={s.label} className="card p-4 text-center">
+              <p className={`font-display text-2xl font-bold tabular-nums ${s.accent}`}>{s.value}</p>
+              <p className="mt-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-chalk-500">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="rise rise-1 mt-5 flex flex-wrap gap-1.5">
         {REAL_VARIANT.map((t) => {
           const done = t.part === 1 && (answers[t.number] ?? "").trim();
           const active = current === t.number;
+          const r = rowFor(t.number);
+          const reviewCls = r
+            ? r.status === "correct" ? "bg-mark-green/25 text-mark-green"
+              : r.status === "incorrect" ? "bg-mark-red/25 text-mark-red"
+              : "bg-board-700/60 text-chalk-500"
+            : "";
           return (
             <button key={t.number} onClick={() => setCurrent(t.number)}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold transition-all duration-150 active:scale-90 ${active ? "bg-mark-yellow text-board-950 ring-2 ring-mark-yellow/40" : done ? "bg-mark-green/20 text-mark-green" : t.part === 2 ? "bg-board-700/60 text-chalk-500" : "bg-board-800 text-chalk-300 hover:bg-board-700"}`}>
+              className={`flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold transition-all duration-150 active:scale-90 ${active ? "bg-mark-yellow text-board-950 ring-2 ring-mark-yellow/40" : review ? reviewCls : done ? "bg-mark-green/20 text-mark-green" : t.part === 2 ? "bg-board-700/60 text-chalk-500" : "bg-board-800 text-chalk-300 hover:bg-board-700"}`}>
               {t.number}
             </button>
           );
@@ -393,28 +443,53 @@ export function RunPage() {
               value={answers[task.number] ?? ""}
               onChange={setAns}
               onSubmit={() => setCurrent((c) => Math.min(19, c + 1))}
-              placeholder="Ответ — только цифры, «-» и «,»"
-              autoFocus
+              placeholder={review ? "Ответ зафиксирован" : "Ответ — только цифры, «-» и «,»"}
+              autoFocus={!review}
+              readOnly={review}
             />
-            {task.hint && <p className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-chalk-500"><Lightbulb className="h-3.5 w-3.5 shrink-0 text-mark-yellow" />{task.hint}</p>}
+
+            {/* Итог по заданию — только в разборе */}
+            {review && rowFor(task.number) && (
+              <div className={`pop-in mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-4 py-2.5 ${
+                rowFor(task.number)!.status === "correct" ? "border-mark-green/40 bg-mark-green/8"
+                : rowFor(task.number)!.status === "incorrect" ? "border-mark-red/40 bg-mark-red/8"
+                : "border-board-600/50 bg-board-800/40"
+              }`}>
+                {rowFor(task.number)!.status === "correct" && <span className="flex items-center gap-1.5 text-[13px] font-bold text-mark-green"><CheckCircle2 className="h-4 w-4" />Верно · +1 балл</span>}
+                {rowFor(task.number)!.status === "incorrect" && <span className="flex items-center gap-1.5 text-[13px] font-bold text-mark-red"><XCircle className="h-4 w-4" />Неверно</span>}
+                {rowFor(task.number)!.status === "skipped" && <span className="flex items-center gap-1.5 text-[13px] font-bold text-chalk-400"><MinusCircle className="h-4 w-4" />Пропущено</span>}
+                <span className="text-[12px] text-chalk-300">
+                  ваш ответ: <b className="font-mono text-chalk-50">{rowFor(task.number)!.given ?? "—"}</b>
+                  <span className="mx-1.5 text-chalk-500">·</span>
+                  эталон: <b className="font-mono text-mark-green">{rowFor(task.number)!.reference}</b>
+                </span>
+              </div>
+            )}
+
+            {!review && task.hint && <p className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-chalk-500"><Lightbulb className="h-3.5 w-3.5 shrink-0 text-mark-yellow" />{task.hint}</p>}
+
             <div className="mt-4 flex flex-wrap gap-2">
               <button onClick={() => setCurrent((c) => Math.max(1, c - 1))} disabled={current === 1} className="btn-ghost px-4 py-2.5 text-[13px] disabled:opacity-30">← Назад</button>
-              {(answers[task.number] ?? "").trim() && (
+              {/* «Показать решение» — только после завершения (режим разбора) */}
+              {review && (
                 <button onClick={() => setRevealed((r) => ({ ...r, [task.number]: !r[task.number] }))} className="btn-ghost px-4 py-2.5 text-[13px]">
                   <Eye className="h-4 w-4" /> {revealed[task.number] ? "Скрыть решение" : "Показать решение"}
                 </button>
               )}
               <button onClick={() => setCurrent((c) => Math.min(19, c + 1))} disabled={current === 19} className="btn-gold ml-auto px-5 py-2.5 text-[13px] disabled:opacity-30">Дальше →</button>
             </div>
-            <p className="mt-3 text-[10.5px] text-chalk-600">Подсвеченная клавиатура печатает в это поле и принимает только цифры, «-» и «,»</p>
+            {!review && <p className="mt-3 text-[10.5px] text-chalk-600">Подсвеченная клавиатура печатает в это поле и принимает только цифры, «-» и «,»</p>}
           </div>
         ) : (
           <div className="mt-5 rounded-lg border border-mark-blue/30 bg-mark-blue/5 p-4">
             <p className="text-[13px] font-bold text-mark-blue">Развёрнутый ответ</p>
             <p className="mt-1 text-[12.5px] leading-relaxed text-chalk-300">Выполните решение на бланке — его проверит преподаватель вручную по критериям. Автопроверка здесь не применяется.</p>
-            <button onClick={() => setRevealed((r) => ({ ...r, [task.number]: !r[task.number] }))} className="btn-ghost mt-3 px-4 py-2 text-[12.5px]">
-              <Eye className="h-3.5 w-3.5" /> {revealed[task.number] ? "Скрыть критерии" : "Показать критерии и решение"}
-            </button>
+            {/* Критерии — только в режиме разбора */}
+            {review && (
+              <button onClick={() => setRevealed((r) => ({ ...r, [task.number]: !r[task.number] }))} className="btn-ghost mt-3 px-4 py-2 text-[12.5px]">
+                <Eye className="h-3.5 w-3.5" /> {revealed[task.number] ? "Скрыть критерии" : "Показать критерии и решение"}
+              </button>
+            )}
           </div>
         )}
 
@@ -428,7 +503,11 @@ export function RunPage() {
       </div>
 
       <div className="rise rise-3 mt-6 flex justify-center">
-        <button onClick={finish} className="btn-gold px-8 py-3.5 text-[15px]">Завершить вариант и проверить</button>
+        {review ? (
+          <button onClick={() => go("results")} className="btn-gold px-8 py-3.5 text-[15px]">К полным результатам</button>
+        ) : (
+          <button onClick={finish} className="btn-gold px-8 py-3.5 text-[15px]">Завершить вариант и проверить</button>
+        )}
       </div>
     </div>
   );

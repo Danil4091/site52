@@ -125,7 +125,7 @@ interface AppState {
   addNotif: (n: Omit<NotifItem, "id" | "time" | "read">) => void;
   markAllRead: () => void;
   startVariant: (id: string) => void;
-  submitExam: (answers: Record<number, string>, secondsSpent: number) => ExamResult;
+  submitExam: (answers: Record<number, string>, secondsSpent: number, opts?: { navigate?: boolean }) => ExamResult;
   toggleResolved: (number: number) => void;
   recordAnswer: (taskNumber: number, correct: boolean) => void;
   setProbBest: (pct: number) => void;
@@ -309,7 +309,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.scrollTo({ top: 0 });
   }, []);
 
-  const submitExam = useCallback((answers: Record<string, string>, secondsSpent: number): ExamResult => {
+  const submitExam = useCallback((answers: Record<string, string>, secondsSpent: number, opts?: { navigate?: boolean }): ExamResult => {
     const variant = { title: "Основной период", year: 2023 };
     const rows: ExamRow[] = REAL_VARIANT.filter((t) => t.part === 1).map((t) => {
       const ref = t.answer ?? REAL_ANSWER_KEY[t.number] ?? "";
@@ -353,8 +353,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const result: ExamResult = { variantTitle: variantLabel, rows, correct, incorrect, skipped, primary, secondary, secondsSpent };
     setLastResult(result);
-    setRoute("results");
-    window.scrollTo({ top: 0 });
+    if (opts?.navigate !== false) {
+      setRoute("results");
+      window.scrollTo({ top: 0 });
+    }
     return result;
   }, [attempts, scope, pushToast, addNotif, registerSolve]);
 
