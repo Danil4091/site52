@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, GraduationCap, KeyRound, LogIn, UserPlus, X } from "lucide-react";
-import { useApp, loadSession, type ProductUser } from "./store";
+import { useApp, loadSession, makeInviteCode, logReferral, type ProductUser } from "./store";
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_PASSWORD, ADMIN_TEACHER_CODE } from "./config";
 import { resolveTeacher } from "./variantSchema";
 import { isApiEnabled } from "./api";
@@ -57,7 +57,7 @@ export default function AuthModal({
   onOpenLegal: (doc: LegalDoc) => void;
   onForgot: () => void;
 }) {
-  const { login } = useApp();
+  const { login, pushToast } = useApp();
   const [tab, setTab] = useState<"login" | "register">("login");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
@@ -123,6 +123,10 @@ export default function AuthModal({
     const code = invite.trim().toUpperCase();
     const teacherName = code ? resolveTeacher(code) : null;
 
+    /* реферальная система: ищем пользователя, чей код совпал */
+    const referrer = users.find((u) => makeInviteCode(u.nickname) === code);
+    if (referrer) logReferral(code, nick);
+
     const user: StoredUser = {
       nickname: nick,
       role: "student",
@@ -130,12 +134,14 @@ export default function AuthModal({
       goal, // целевой балл ЕГЭ — отображается пунктиром на графике аналитики
       teacherCode: code || undefined,
       teacherName: teacherName ?? undefined,
+      referredBy: referrer ? referrer.nickname : undefined,
       consentVersion: "1.0",
       consentAt: new Date().toISOString(),
     };
     saveUsers([...users, user]);
     const { password: _pw, ...rest } = user;
     login(rest);
+    if (referrer) pushToast(`Бонус по приглашению от @${referrer.nickname}: +30 XP`);
     onClose();
   };
 

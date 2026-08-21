@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eraser, Eye, Flame, Info,
-  Lightbulb, MinusCircle, Play, Sparkles, Target, Timer, XCircle,
+  Lightbulb, MinusCircle, Play, Rocket, Sparkles, Target, Timer, Users, XCircle,
 } from "lucide-react";
 import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
 import { useApp, type CustomTask, type ExamResult } from "./store";
@@ -63,7 +63,10 @@ function useForecast(seconds: number[]): number | null {
 }
 
 export function HomePage() {
-  const { user, attempts, topicStats, mistakes, go, startVariant, streak, todaySolved } = useApp();
+  const {
+    user, attempts, topicStats, mistakes, go, startVariant, streak, todaySolved,
+    inviteCode, referrals, marathonBest, pushToast,
+  } = useApp();
   const days = daysUntilExam();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : null;
   const unresolved = mistakes.filter((m) => !m.resolved).length;
@@ -214,6 +217,60 @@ export function HomePage() {
                 <Target className="h-3.5 w-3.5 shrink-0" />
                 Прогноз: <b className="tabular-nums">{forecast}</b> через 3 варианта
               </p>
+            )}
+          </div>
+
+          {/* марафон */}
+          <div className="rise rise-5 card card-hover col-span-12 flex flex-col p-5 md:col-span-6"
+            onClick={() => go("marathon")} role="button" tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && go("marathon")}>
+            <div className="flex items-center justify-between">
+              <p className="tick text-mark-red">Скоростной режим</p>
+              <Rocket className="h-5 w-5 text-mark-red" />
+            </div>
+            <p className="mt-2 font-display text-xl font-bold text-chalk-50">Марафон · часть 1</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-chalk-400">
+              Решай задачи подряд на время — бонус XP за скорость.
+            </p>
+            <p className="mt-auto flex items-center gap-1.5 pt-3 text-[12px] font-bold text-mark-yellow">
+              <Timer className="h-3.5 w-3.5" />
+              {marathonBest > 0 ? `Лучший: ${marathonBest}/10 · Сыграть ещё` : "Сыграть первый"}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </p>
+          </div>
+
+          {/* приведи друга */}
+          <div className="rise rise-5 card col-span-12 flex flex-col p-5 md:col-span-6">
+            <div className="flex items-center justify-between">
+              <p className="tick text-mark-pink">Реферальная система</p>
+              <Users className="h-5 w-5 text-mark-pink" />
+            </div>
+            <p className="mt-2 font-display text-xl font-bold text-chalk-50">Приведи друга</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-chalk-400">
+              Друг получает <b className="text-mark-green">+30 XP</b>, ты — <b className="text-mark-green">+50 XP</b> за каждого.
+            </p>
+            {user ? (
+              <div className="mt-auto pt-3">
+                <div className="flex items-center gap-2 rounded-lg border border-board-600/70 bg-board-950/60 px-3 py-2.5">
+                  <code className="min-w-0 flex-1 truncate font-mono text-[12px] font-bold text-mark-yellow">{inviteCode}</code>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const link = `${location.origin}${location.pathname}?ref=${inviteCode}`;
+                      navigator.clipboard?.writeText(link);
+                      pushToast("Ссылка-приглашение скопирована");
+                    }}
+                    className="btn-ghost shrink-0 px-3 py-1.5 text-[11.5px]"
+                  >
+                    Копировать ссылку
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-chalk-500">
+                  Приглашено: <b className="tabular-nums text-chalk-200">{referrals.length}</b>
+                </p>
+              </div>
+            ) : (
+              <p className="mt-auto pt-3 text-[11.5px] text-chalk-500">Войди, чтобы получить свою ссылку-приглашение.</p>
             )}
           </div>
         </div>

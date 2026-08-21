@@ -23,12 +23,33 @@ export interface ProductUser {
   consentVersion?: string; consentAt?: string;
   /** Для будущего Telegram-бота: напоминания о стриках, мини-тесты. */
   telegram_id?: string;
+  /** Ник друга, по чьей ссылке зарегистрировался (реферальная система). */
+  referredBy?: string;
+}
+
+/* ── реферальная система: коды и общий журнал приглашений ── */
+export const makeInviteCode = (nick: string) =>
+  `KOMI-${nick.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase()}`;
+
+const REFLOG_KEY = "komi-reflog-v1";
+export function logReferral(code: string, nick: string) {
+  try {
+    const log = JSON.parse(localStorage.getItem(REFLOG_KEY) ?? "[]") as { code: string; nick: string; ts: number }[];
+    log.push({ code, nick, ts: Date.now() });
+    localStorage.setItem(REFLOG_KEY, JSON.stringify(log));
+  } catch { /* ок */ }
+}
+export function readReferrals(code: string): string[] {
+  try {
+    const log = JSON.parse(localStorage.getItem(REFLOG_KEY) ?? "[]") as { code: string; nick: string }[];
+    return log.filter((e) => e.code === code).map((e) => e.nick);
+  } catch { return []; }
 }
 
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
   | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
-  | "variant-run";
+  | "variant-run" | "marathon";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
@@ -117,6 +138,16 @@ interface AppState {
   attachTeacher: (code: string) => { ok: boolean; teacherName?: string };
   recordPublishedAttempt: (label: string, primary: number, secondary: number, mistakes: number) => void;
 
+  /* марафон, рефералы, теги ошибок */
+  marathonCount: number;
+  marathonBest: number;
+  referrals: string[];
+  tagsAssigned: number;
+  tagStats: Record<string, number>;
+  recordMarathon: (correct: number, total: number, seconds: number) => void;
+  assignTag: (mistakeNumber: number, tag: string) => void;
+  inviteCode: string;
+
   go: (r: Route) => void;
   login: (u: ProductUser) => void;
   logout: () => void;
@@ -177,6 +208,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeVariant, setActiveVariant] = useState<PublishedVariant | null>(null);
   const justSwitched = useRef(false);
 
+  /* марафон, реферальная система, теги ошибок */
+  const [marathonCount, setMarathonCount] = useState(0);
+  const [marathonBest, setMarathonBest] = useState(0);
+  const [referrals, setReferrals] = useState<string[]>([]);
+  const [tagsAssigned, setTagsAssigned] = useState(0);
+  const [tagStats, setTagStats] = useState<Record<string, number>>({});
+
   /* загрузка данных при смене пользователя — демо-набор только у «artom» */
   useEffect(() => {
     justSwitched.current = true;
@@ -195,6 +233,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else setStreak(st);
     setSolvedTaskIds(read<string[]>(scoped("komi-solvedtasks", s), []));
     setTrainerTopic(null);
+    setMarathonCount(read<number>(scoped("komi-marathon-n", s), 0));
+    setMarathonBest(read<number>(scoped("komi-marathon-best", s), 0));
+    setTagsAssigned(read<number>(scoped("komi-tags-n", s), 0));
+    setTagStats(read<Record<string, number>>(scoped("komi-tagstats", s), {}));
+
+    /* рефералы: считаем из общего журнала по коду пользователя */
+    if (user) {
+      const code = makeInviteCode(user.nickname);
+      const mine = readReferrals(code);
+      setReferrals(mine);
+      /* разово начисляем +50 XP за каждого нового приглашённого */
+      const credited = read<number>(scoped("komi-ref-credited", s), 0);
+      if (mine.length > credited) {
+        setStreak((st) => ({ ...st, xp: st.xp + (mine.length - credited) * 50 }));
+        write(scoped("komi-ref-credited", s), mine.length);
+      }
+      /* приветственный бонус +30 XP тому, кто пришёл по чужой ссылке (один раз) */
+      if (user.referredBy && !read<boolean>(scoped("komi-welcome", s), false)) {
+        setStreak((st) => ({ ...st, xp: st.xp + 30 }));
+        write(scoped("komi-welcome", s), true);
+      }
+    } else {
+      setReferrals([]);
+    }
     setNotifs(demo ? [
       { id: 1, type: "achievement", title: "Серия — 6 дней!", body: "Ещё один день — и рекорд месяца по тренировкам будет вашим.", time: "2 ч назад", read: false },
       { id: 2, type: "lesson", title: "Занятие завтра в 18:00", body: "Даниил разберёт №18 «Параметры». Подготовьте вопросы по графическому методу.", time: "5 ч назад", read: false },
@@ -211,6 +273,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (scope !== "guest") write(scoped("komi-streak", scope), streak); }, [streak, scope]);
   useEffect(() => { write(TASKBANK_KEY, taskBank); }, [taskBank]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-solvedtasks", scope), solvedTaskIds); }, [solvedTaskIds, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-marathon-n", scope), marathonCount); }, [marathonCount, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-marathon-best", scope), marathonBest); }, [marathonBest, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-referrals", scope), referrals); }, [referrals, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-tags-n", scope), tagsAssigned); }, [tagsAssigned, scope]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-tagstats", scope), tagStats); }, [tagStats, scope]);
 
   const pushToast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -251,9 +318,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [attempts]
   );
 
+  /* новые метрики: темы, недельная активность, цель */
+  const distinctTopics = useMemo(
+    () => Object.values(topicStats).filter((t) => t.solved > 0).length,
+    [topicStats]
+  );
+  const weeklyVariants = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 86_400_000;
+    return attempts.filter((a) => a.ts !== undefined && a.ts >= weekAgo).length;
+  }, [attempts]);
+  const goalReached = useMemo(
+    () => (user?.goal !== undefined ? bestScore >= user.goal : false),
+    [bestScore, user?.goal]
+  );
+
   const snapshot = useMemo(
-    () => ({ attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants }),
-    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants]
+    () => ({
+      attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes,
+      probBest, nightOwl, solvedTasks, probSolved, perfectVariants,
+      distinctTopics, marathonCount, marathonBest, referrals: referrals.length,
+      tagsAssigned, weeklyVariants, goalReached,
+    }),
+    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants, distinctTopics, marathonCount, marathonBest, referrals.length, tagsAssigned, weeklyVariants, goalReached]
   );
 
   /* автопроверка достижений: конфетти + XP + тост + уведомление */
@@ -343,7 +429,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     registerSolve();
 
-    const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort() };
+    const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort(), ts: Date.now() };
     const bestBefore = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
     setAttempts((a) => [...a, newAttempt]);
     if (secondary > bestBefore) {
@@ -482,9 +568,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       secondary,
       mistakes,
       date: todayShort(),
+      ts: Date.now(),
     }]);
     void primary;
   }, [registerSolve]);
+
+  /* ── марафон: фиксируем игру, лучший результат и XP за скорость ── */
+  const recordMarathon = useCallback((correct: number, total: number, seconds: number) => {
+    setMarathonCount((n) => n + 1);
+    setMarathonBest((b) => Math.max(b, correct));
+    /* XP: 10 за задачу + бонус за скорость (до 30) */
+    const speedBonus = Math.max(0, Math.round(30 - seconds / total / 3));
+    const xp = correct * 10 + speedBonus;
+    setStreak((s) => ({ ...s, xp: s.xp + xp }));
+    registerSolve();
+    pushToast(`Марафон: ${correct}/${total} · +${xp} XP`);
+  }, [registerSolve, pushToast]);
+
+  /* ── теги ошибок: размечаем причину промаха ── */
+  const assignTag = useCallback((mistakeNumber: number, tag: string) => {
+    setMistakes((prev) => prev.map((g) => (g.number === mistakeNumber ? { ...g, tag } : g)));
+    setTagsAssigned((n) => n + 1);
+    setTagStats((prev) => ({ ...prev, [tag]: (prev[tag] ?? 0) + 1 }));
+  }, []);
 
   const importTasks = useCallback((list: CustomTask[]) => {
     let added = 0, skipped = 0;
@@ -509,6 +615,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     streak, todaySolved, taskBank,
     trainerTopic, solvedTaskIds, openTrainer, markTaskSolved, celebrate,
     publishedVariants, activeVariant, publishVariant, unpublishVariant, runPublishedVariant, attachTeacher, recordPublishedAttempt,
+    marathonCount, marathonBest, referrals, tagsAssigned, tagStats, recordMarathon, assignTag,
+    inviteCode: user ? makeInviteCode(user.nickname) : "",
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,

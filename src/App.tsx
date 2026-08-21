@@ -5,6 +5,7 @@ import { HomePage, BankPage, VariantsPage, RunPage, ResultsPage, ProbabilityPage
 import { AnalyticsPage, RatingPage, MistakesPage, AdminPage } from "./product/pages2";
 import TrainerPage from "./product/TrainerPage";
 import PublishedVariantRunner from "./product/PublishedVariantRunner";
+import MarathonPage from "./product/MarathonPage";
 import { ConfettiBurst, FieldDockProvider } from "./product/ui";
 import AuthModal from "./product/AuthModal";
 import LegalModal, { type LegalDoc } from "./product/LegalDocs";
@@ -57,6 +58,7 @@ export default function App() {
           {route === "trainer" && <TrainerPage />}
           {route === "variants" && <VariantsPage />}
           {route === "variant-run" && <PublishedVariantRunner />}
+          {route === "marathon" && <MarathonPage />}
           {route === "run" && <RunPage />}
           {route === "results" && <ResultsPage />}
           {route === "probability" && <ProbabilityPage />}

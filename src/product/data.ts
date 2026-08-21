@@ -3,8 +3,8 @@
    ──────────────────────────────────────────────────────────────────── */
 import type { LucideIcon } from "lucide-react";
 import {
-  CalendarCheck, ClipboardList, Crown, Crosshair, Eraser, Flame, Footprints, Moon, Star,
-  Target, Timer, TrendingUp, Zap,
+  Brain, CalendarCheck, ClipboardList, Crown, Crosshair, Eraser, Flag, Flame, Footprints,
+  Gauge, Gift, Medal, Moon, Rocket, Star, Tags, Target, Timer, TrendingUp, Users, Zap,
 } from "lucide-react";
 import { EGE_DATE } from "./config";
 
@@ -29,12 +29,14 @@ export const VARIANTS: ProductVariant[] = [
 export interface AttemptRecord {
   id: number | string; variantId: string; label: string;
   secondary: number; mistakes: number; date: string;
+  ts?: number; // unix-время попытки — для еженедельного отчёта
 }
 
+const _d = (days: number) => Date.now() - days * 86_400_000;
 export const INITIAL_ATTEMPTS: AttemptRecord[] = [
-  { id: 1, variantId: "v-2022-res", label: "Резервный 2022", secondary: 74, mistakes: 2, date: "12 мая" },
-  { id: 2, variantId: "v-2023-main", label: "Основной 2023", secondary: 79, mistakes: 1, date: "15 мая" },
-  { id: 3, variantId: "v-2023-dv", label: "Досрочный 2023 · ДВ", secondary: 84, mistakes: 1, date: "18 мая" },
+  { id: 1, variantId: "v-2022-res", label: "Резервный 2022", secondary: 74, mistakes: 2, date: "12 мая", ts: _d(9) },
+  { id: 2, variantId: "v-2023-main", label: "Основной 2023", secondary: 79, mistakes: 1, date: "15 мая", ts: _d(5) },
+  { id: 3, variantId: "v-2023-dv", label: "Досрочный 2023 · ДВ", secondary: 84, mistakes: 1, date: "18 мая", ts: _d(1) },
 ];
 
 export const SCALE: Record<number, number> = {
@@ -165,6 +167,13 @@ export interface AchieveSnapshot {
   solvedTasks: number;      // всего решено задач (части 1 + тренажёры)
   probSolved: number;       // решено задач по теории вероятностей (№4 + №5)
   perfectVariants: number;  // варианты, сданные без единой ошибки
+  distinctTopics: number;   // тем, по которым решена хотя бы одна задача
+  marathonCount: number;    // сыграно марафонов
+  marathonBest: number;     // лучший результат марафона (верных из 10)
+  referrals: number;        // приглашено друзей
+  tagsAssigned: number;     // размечено ошибок тегами
+  weeklyVariants: number;   // вариантов за последние 7 дней
+  goalReached: boolean;     // достигнут целевой балл
 }
 export interface AchievementDef {
   id: string; title: string; desc: string; icon: LucideIcon;
@@ -189,6 +198,16 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "eraser", title: "Охотник за ошибками", desc: "Разобрать 5 ошибок в журнале", icon: Eraser, xp: 50, test: (s) => s.resolvedMistakes >= 5, progress: (s) => ({ cur: Math.min(s.resolvedMistakes, 5), goal: 5 }) },
   { id: "sniper", title: "Вероятностный снайпер", desc: "80%+ точности в тренажёре вероятностей", icon: Crosshair, xp: 70, test: (s) => s.probBest >= 80, progress: (s) => ({ cur: Math.min(s.probBest, 80), goal: 80 }) },
   { id: "night-owl", title: "Ночная сова", desc: "Решить вариант после 22:00", icon: Moon, xp: 30, test: (s) => s.nightOwl, progress: (s) => ({ cur: s.nightOwl ? 1 : 0, goal: 1 }) },
+  /* ── новые: марафон, рефералка, теги, отчёты ── */
+  { id: "sprinter", title: "Спринтер", desc: "Сыграть свой первый марафон", icon: Rocket, xp: 30, test: (s) => s.marathonCount >= 1, progress: (s) => ({ cur: Math.min(s.marathonCount, 1), goal: 1 }) },
+  { id: "marathon-master", title: "Марафон-мастер", desc: "Набрать 8+ из 10 в марафоне", icon: Gauge, xp: 80, test: (s) => s.marathonBest >= 8, progress: (s) => ({ cur: Math.min(s.marathonBest, 8), goal: 8 }) },
+  { id: "friendly", title: "Дружелюбный", desc: "Пригласить 1 друга по своей ссылке", icon: Users, xp: 50, test: (s) => s.referrals >= 1, progress: (s) => ({ cur: Math.min(s.referrals, 1), goal: 1 }) },
+  { id: "ambassador", title: "Амбассадор", desc: "Пригласить 3 друзей", icon: Gift, xp: 150, test: (s) => s.referrals >= 3, progress: (s) => ({ cur: Math.min(s.referrals, 3), goal: 3 }) },
+  { id: "analyst", title: "Аналитик", desc: "Разметить 5 ошибок тегами причин", icon: Tags, xp: 40, test: (s) => s.tagsAssigned >= 5, progress: (s) => ({ cur: Math.min(s.tagsAssigned, 5), goal: 5 }) },
+  { id: "weekly-hero", title: "Недельный герой", desc: "Решить 3 варианта за одну неделю", icon: CalendarCheck, xp: 70, test: (s) => s.weeklyVariants >= 3, progress: (s) => ({ cur: Math.min(s.weeklyVariants, 3), goal: 3 }) },
+  { id: "goal-getter", title: "Целеустремлённый", desc: "Достичь своего целевого балла", icon: Flag, xp: 100, test: (s) => s.goalReached, progress: (s) => ({ cur: s.goalReached ? 1 : 0, goal: 1 }) },
+  { id: "explorer", title: "Эрудит", desc: "Решить задачи по 10 разным темам", icon: Brain, xp: 90, test: (s) => s.distinctTopics >= 10, progress: (s) => ({ cur: Math.min(s.distinctTopics, 10), goal: 10 }) },
+  { id: "centurion", title: "Сотник", desc: "Решить 100 задач суммарно", icon: Medal, xp: 200, test: (s) => s.solvedTasks >= 100, progress: (s) => ({ cur: Math.min(s.solvedTasks, 100), goal: 100 }) },
 ];
 
 /* ─────────────── рейтинг (приватность: имя + ник, без фамилий) ─────────────── */
@@ -207,7 +226,11 @@ export const LEADER_SEED = [
 
 /* ─────────────── журнал ошибок ─────────────── */
 export interface MistakeOccurrence { given: string | null; reference: string; variant: string; date: string; }
-export interface MistakeGroup { number: number; topic: string; resolved: boolean; occurrences: MistakeOccurrence[]; }
+export interface MistakeGroup { number: number; topic: string; resolved: boolean; occurrences: MistakeOccurrence[]; tag?: string; }
+
+/* Теги причин ошибок — для точечной работы над промахами */
+export const ERROR_TAGS = ["Потеря знака", "ОДЗ", "Арифметика", "Невнимательность", "Не знал метод", "Не хватило времени"] as const;
+export type ErrorTag = (typeof ERROR_TAGS)[number];
 export function seedMistakes(): MistakeGroup[] {
   return [
     { number: 10, topic: "Текстовые задачи", resolved: false, occurrences: [

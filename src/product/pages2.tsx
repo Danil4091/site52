@@ -128,14 +128,23 @@ export function AnalyticsPage() {
 
 /* ═══════════════════════ РЕЙТИНГ + АЧИВКИ ═══════════════════════ */
 export function RatingPage() {
-  const { attempts, mistakes, unlocked, probBest, nightOwl, streak, topicStats } = useApp();
+  const {
+    attempts, mistakes, unlocked, probBest, nightOwl, streak, topicStats, user,
+    marathonCount, marathonBest, referrals, tagsAssigned,
+  } = useApp();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
+  const solvedTasks = Object.values(topicStats).reduce((s, t) => s + t.solved, 0);
+  const weekAgo = Date.now() - 7 * 86_400_000;
   const snapshot: AchieveSnapshot = {
     attempts: attempts.length, best, streak: streak.days,
     resolvedMistakes: mistakes.filter((m) => m.resolved).length, probBest, nightOwl,
-    solvedTasks: Object.values(topicStats).reduce((s, t) => s + t.solved, 0),
+    solvedTasks,
     probSolved: (topicStats[4]?.solved ?? 0) + (topicStats[5]?.solved ?? 0),
     perfectVariants: attempts.filter((a) => a.mistakes === 0 && a.secondary > 0).length,
+    distinctTopics: Object.values(topicStats).filter((t) => t.solved > 0).length,
+    marathonCount, marathonBest, referrals: referrals.length, tagsAssigned,
+    weeklyVariants: attempts.filter((a) => a.ts !== undefined && a.ts >= weekAgo).length,
+    goalReached: user?.goal !== undefined ? best >= user.goal : false,
   };
 
   const top = [...LEADER_SEED].sort((a, b) => b.score - a.score);
