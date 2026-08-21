@@ -211,24 +211,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const bestScore = useMemo(() => (attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0), [attempts]);
   const resolvedMistakes = useMemo(() => mistakes.filter((g) => g.resolved).length, [mistakes]);
 
-  const snapshot = useMemo(
-    () => ({ attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes, probBest, nightOwl }),
-    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl]
+  /* всего решено задач + решено по теории вероятностей (№4 + №5) */
+  const solvedTasks = useMemo(
+    () => Object.values(topicStats).reduce((s, t) => s + t.solved, 0),
+    [topicStats]
+  );
+  const probSolved = useMemo(
+    () => (topicStats[4]?.solved ?? 0) + (topicStats[5]?.solved ?? 0),
+    [topicStats]
+  );
+  const perfectVariants = useMemo(
+    () => attempts.filter((a) => a.mistakes === 0 && a.secondary > 0).length,
+    [attempts]
   );
 
-  /* автопроверка достижений: конфетти + тост + уведомление */
+  const snapshot = useMemo(
+    () => ({ attempts: attempts.length, best: bestScore, streak: streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants }),
+    [attempts.length, bestScore, streak.days, resolvedMistakes, probBest, nightOwl, solvedTasks, probSolved, perfectVariants]
+  );
+
+  /* автопроверка достижений: конфетти + XP + тост + уведомление */
   useEffect(() => {
     if (justSwitched.current) { justSwitched.current = false; return; }
     const newly = ACHIEVEMENTS.filter((a) => unlocked[a.id] === undefined && a.test(snapshot));
     if (!newly.length) return;
     const now = Date.now();
+    const xpGain = newly.reduce((s, a) => s + a.xp, 0);
     setUnlocked((prev) => {
       const next = { ...prev };
       for (const a of newly) next[a.id] = now;
       return next;
     });
+    setStreak((s) => ({ ...s, xp: s.xp + xpGain }));
     setBurst((b) => b + 1);
-    const title = newly.length === 1 ? `Ачивка разблокирована: «${newly[0].title}»` : `Разблокировано достижений: ${newly.length}`;
+    const title = newly.length === 1 ? `Ачивка: «${newly[0].title}» (+${newly[0].xp} XP)` : `Разблокировано ${newly.length} ачивок (+${xpGain} XP)`;
     setTimeout(() => pushToast(title), 400);
     addNotif({ type: "achievement", title, body: newly.map((a) => `«${a.title}»`).join(", ") });
   }, [snapshot, unlocked, pushToast, addNotif]);

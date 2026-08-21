@@ -6,16 +6,27 @@ import { AnalyticsPage, RatingPage, MistakesPage, AdminPage } from "./product/pa
 import TrainerPage from "./product/TrainerPage";
 import { ConfettiBurst, FieldDockProvider } from "./product/ui";
 import AuthModal from "./product/AuthModal";
+import LegalModal, { type LegalDoc } from "./product/LegalDocs";
+import ForgotPasswordModal from "./product/ForgotPassword";
 
 export default function App() {
   const { route, burst } = useApp();
   const [authOpen, setAuthOpen] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   /* окно входа открывается по событию из шапки */
   useEffect(() => {
     const onLogin = () => setAuthOpen(true);
     window.addEventListener("komi:login", onLogin);
     return () => window.removeEventListener("komi:login", onLogin);
+  }, []);
+
+  /* юридические документы открываются по событию из футера */
+  useEffect(() => {
+    const onLegal = (e: Event) => setLegalDoc((e as CustomEvent<LegalDoc>).detail ?? "privacy");
+    window.addEventListener("komi:legal", onLegal);
+    return () => window.removeEventListener("komi:legal", onLegal);
   }, []);
 
   return (
@@ -44,7 +55,14 @@ export default function App() {
         <MobileNav />
         <Toasts />
         <ConfettiBurst burst={burst} />
-        <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+        <AuthModal
+          open={authOpen}
+          onClose={() => setAuthOpen(false)}
+          onOpenLegal={setLegalDoc}
+          onForgot={() => { setAuthOpen(false); setForgotOpen(true); }}
+        />
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+        <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
       </div>
     </FieldDockProvider>
   );

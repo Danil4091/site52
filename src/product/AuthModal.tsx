@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, GraduationCap, KeyRound, LogIn, UserPlus, X } from "lucide-react";
 import { useApp, loadSession, type ProductUser } from "./store";
+import type { LegalDoc } from "./LegalDocs";
 
 type StoredUser = ProductUser & { password: string };
 
@@ -20,7 +21,17 @@ function loadUsers(): StoredUser[] {
   return SEED;
 }
 
-export default function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function AuthModal({
+  open,
+  onClose,
+  onOpenLegal,
+  onForgot,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenLegal: (doc: LegalDoc) => void;
+  onForgot: () => void;
+}) {
   const { login } = useApp();
   const [tab, setTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -29,10 +40,20 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
   const [name, setName] = useState("");
   const [nickname, setNickname] = useState("");
   const [invite, setInvite] = useState("");
+  const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* автоподхват реферального кода преподавателя из URL: ?ref=TEACHER123 */
   useEffect(() => {
-    if (open) { setTab("login"); setError(null); }
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref && ref.trim()) {
+      setInvite(ref.trim().toUpperCase());
+      setTab("register");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) { setTab("login"); setError(null); setConsent(false); }
   }, [open]);
 
   useEffect(() => {
@@ -63,6 +84,7 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
     const finalNick = nick || name.trim().split(" ")[0].toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError("Похоже, в e-mail опечатка"); return; }
     if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
+    if (!consent) { setError("Необходимо согласие на обработку персональных данных и условия соглашения"); return; }
     if (users.some((u) => u.email.toLowerCase() === email.trim().toLowerCase())) { setError("Такой e-mail уже зарегистрирован — войдите"); return; }
     const code = invite.trim().toUpperCase();
     const user: StoredUser = {
@@ -125,10 +147,26 @@ export default function AuthModal({ open, onClose }: { open: boolean; onClose: (
             </button>
           </div>
           {tab === "register" && (
-            <div className="relative">
-              <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-chalk-500" />
-              <input value={invite} onChange={(e) => setInvite(e.target.value.toUpperCase())} placeholder="Код преподавателя (если есть) — KOMI-2026" className={`${field} pl-9 font-mono tracking-wider`} aria-label="Код приглашения" />
-            </div>
+            <>
+              <div className="relative">
+                <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-chalk-500" />
+                <input value={invite} onChange={(e) => setInvite(e.target.value.toUpperCase())} placeholder="Код преподавателя (если есть) — KOMI-2026" className={`${field} pl-9 font-mono tracking-wider`} aria-label="Код преподавателя" />
+              </div>
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-board-600/70 bg-board-800/40 px-3 py-2.5 transition-colors hover:border-board-600">
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-mark-yellow" />
+                <span className="text-[11.5px] leading-relaxed text-chalk-300">
+                  Я согласен(на) на обработку персональных данных и принимаю условия{" "}
+                  <button type="button" onClick={() => onOpenLegal("terms")} className="font-bold text-mark-yellow underline-offset-2 hover:underline">Пользовательского соглашения</button>{" "}
+                  и{" "}
+                  <button type="button" onClick={() => onOpenLegal("privacy")} className="font-bold text-mark-yellow underline-offset-2 hover:underline">Политики конфиденциальности</button>
+                </span>
+              </label>
+            </>
+          )}
+          {tab === "login" && (
+            <button type="button" onClick={onForgot} className="text-[11.5px] font-semibold text-mark-blue transition-colors hover:text-chalk-50">
+              Забыли пароль?
+            </button>
           )}
         </div>
 

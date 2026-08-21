@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowUpFromLine, Award, Check, Copy, Crown, Download, FileJson, Flame,
+  AlertTriangle, ArrowUpFromLine, Check, Copy, Crown, Download, FileJson, Flame,
   KeyRound, Link2, Medal, Plus, Sparkles, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X,
 } from "lucide-react";
 import {
@@ -98,9 +98,15 @@ export function AnalyticsPage() {
 
 /* ═══════════════════════ РЕЙТИНГ + АЧИВКИ ═══════════════════════ */
 export function RatingPage() {
-  const { attempts, mistakes, unlocked, probBest, nightOwl, streak } = useApp();
+  const { attempts, mistakes, unlocked, probBest, nightOwl, streak, topicStats } = useApp();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
-  const snapshot: AchieveSnapshot = { attempts: attempts.length, best, streak: streak.days, resolvedMistakes: mistakes.filter((m) => m.resolved).length, probBest, nightOwl };
+  const snapshot: AchieveSnapshot = {
+    attempts: attempts.length, best, streak: streak.days,
+    resolvedMistakes: mistakes.filter((m) => m.resolved).length, probBest, nightOwl,
+    solvedTasks: Object.values(topicStats).reduce((s, t) => s + t.solved, 0),
+    probSolved: (topicStats[4]?.solved ?? 0) + (topicStats[5]?.solved ?? 0),
+    perfectVariants: attempts.filter((a) => a.mistakes === 0 && a.secondary > 0).length,
+  };
 
   const top = [...LEADER_SEED].sort((a, b) => b.score - a.score);
   const podium = [top[1], top[0], top[2]];
@@ -147,7 +153,14 @@ export function RatingPage() {
       </div>
 
       <p className="tick mt-10 text-mark-pink">Достижения</p>
-      <h2 className="mt-1 font-display text-xl font-bold text-chalk-50">Ваши ачивки</h2>
+      <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+        <h2 className="font-display text-xl font-bold text-chalk-50">Ваши ачивки</h2>
+        <p className="font-mono text-[11.5px] font-semibold tabular-nums text-chalk-400">
+          открыто <b className="text-mark-yellow">{Object.keys(unlocked).length}</b> из {ACHIEVEMENTS.length}
+          {" · "}
+          <b className="text-mark-green">+{ACHIEVEMENTS.filter((a) => unlocked[a.id]).reduce((s, a) => s + a.xp, 0)} XP</b>
+        </p>
+      </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ACHIEVEMENTS.map((a) => {
           const got = unlocked[a.id];
@@ -155,23 +168,28 @@ export function RatingPage() {
           const pctDone = Math.min(100, Math.round((prog.cur / prog.goal) * 100));
           const Icon = a.icon;
           return (
-            <div key={a.id} className={`card card-hover p-4 ${got ? "!border-mark-yellow/50" : "opacity-90"}`}>
+            <div key={a.id} className={`card card-hover relative p-4 ${got ? "!border-mark-yellow/50" : "opacity-90"}`}>
+              <span className={`absolute right-3 top-3 rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${got ? "bg-mark-green/15 text-mark-green" : "bg-board-700/80 text-chalk-500"}`}>
+                {got ? "Открыто" : "Закрыто"}
+              </span>
               <div className="flex items-center gap-3">
                 <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${got ? "bg-mark-yellow/15 text-mark-yellow" : "bg-board-700/70 text-chalk-500"}`}>
-                  {got ? <Icon className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                  <Icon className="h-5 w-5" />
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 pr-14">
                   <p className={`truncate text-[13px] font-bold ${got ? "text-mark-yellow" : "text-chalk-200"}`}>{a.title}</p>
                   <p className="text-[10.5px] text-chalk-500">{a.desc}</p>
                 </div>
-                {got && <Award className="h-4 w-4 shrink-0 text-mark-yellow" />}
               </div>
-              {!got && (
-                <div className="mt-3">
-                  <div className="xp-track !h-[5px]"><div className="xp-fill" style={{ width: `${pctDone}%` }} /></div>
-                  <p className="mt-1 text-right font-mono text-[9.5px] font-semibold tabular-nums text-chalk-500">{prog.cur}/{prog.goal}</p>
-                </div>
-              )}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold ${got ? "bg-mark-yellow/15 text-mark-yellow" : "bg-board-700/60 text-chalk-400"}`}>+{a.xp} XP</span>
+                {!got && (
+                  <div className="flex-1">
+                    <div className="xp-track !h-[5px]"><div className="xp-fill" style={{ width: `${pctDone}%` }} /></div>
+                  </div>
+                )}
+                {!got && <span className="font-mono text-[9.5px] font-semibold tabular-nums text-chalk-500">{prog.cur}/{prog.goal}</span>}
+              </div>
             </div>
           );
         })}

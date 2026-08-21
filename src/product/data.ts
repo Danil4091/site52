@@ -3,7 +3,7 @@
    ──────────────────────────────────────────────────────────────────── */
 import type { LucideIcon } from "lucide-react";
 import {
-  CalendarCheck, Crown, Crosshair, Eraser, Flame, Footprints, Moon, Star,
+  CalendarCheck, ClipboardList, Crown, Crosshair, Eraser, Flame, Footprints, Moon, Star,
   Target, Timer, TrendingUp, Zap,
 } from "lucide-react";
 
@@ -127,21 +127,36 @@ export const REAL_ANSWER_KEY: Record<number, string> = Object.fromEntries(
 );
 
 /* ─────────────── достижения ─────────────── */
-export interface AchieveSnapshot { attempts: number; best: number; streak: number; resolvedMistakes: number; probBest: number; nightOwl: boolean; }
-export interface AchievementDef { id: string; title: string; desc: string; icon: LucideIcon; test: (s: AchieveSnapshot) => boolean; progress: (s: AchieveSnapshot) => { cur: number; goal: number }; }
+export interface AchieveSnapshot {
+  attempts: number; best: number; streak: number; resolvedMistakes: number;
+  probBest: number; nightOwl: boolean;
+  solvedTasks: number;      // всего решено задач (части 1 + тренажёры)
+  probSolved: number;       // решено задач по теории вероятностей (№4 + №5)
+  perfectVariants: number;  // варианты, сданные без единой ошибки
+}
+export interface AchievementDef {
+  id: string; title: string; desc: string; icon: LucideIcon;
+  xp: number; // награда в XP при разблокировке
+  test: (s: AchieveSnapshot) => boolean;
+  progress: (s: AchieveSnapshot) => { cur: number; goal: number };
+}
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { id: "first-variant", title: "Первый шаг", desc: "Завершить свой первый вариант", icon: Footprints, test: (s) => s.attempts >= 1, progress: (s) => ({ cur: Math.min(s.attempts, 1), goal: 1 }) },
-  { id: "warmup", title: "Разогрев", desc: "Решить 3 варианта", icon: Zap, test: (s) => s.attempts >= 3, progress: (s) => ({ cur: Math.min(s.attempts, 3), goal: 3 }) },
-  { id: "marathon", title: "Марафонец", desc: "Решить 5 вариантов", icon: Timer, test: (s) => s.attempts >= 5, progress: (s) => ({ cur: Math.min(s.attempts, 5), goal: 5 }) },
-  { id: "threshold", title: "Порог пройден", desc: "Набрать 70+ тестовых баллов", icon: Target, test: (s) => s.best >= 70, progress: (s) => ({ cur: Math.min(s.best, 70), goal: 70 }) },
-  { id: "eighty", title: "Восемьдесят!", desc: "Набрать 80+ тестовых баллов", icon: TrendingUp, test: (s) => s.best >= 80, progress: (s) => ({ cur: Math.min(s.best, 80), goal: 80 }) },
-  { id: "hundred", title: "Сотка!", desc: "100 баллов за вариант. Легенда", icon: Star, test: (s) => s.best >= 100, progress: (s) => ({ cur: Math.min(s.best, 100), goal: 100 }) },
-  { id: "streak-3", title: "Три дня в строю", desc: "Тренироваться 3 дня подряд", icon: Flame, test: (s) => s.streak >= 3, progress: (s) => ({ cur: Math.min(s.streak, 3), goal: 3 }) },
-  { id: "streak-7", title: "Неделя без пропусков", desc: "Тренироваться 7 дней подряд", icon: CalendarCheck, test: (s) => s.streak >= 7, progress: (s) => ({ cur: Math.min(s.streak, 7), goal: 7 }) },
-  { id: "eraser", title: "Охотник за ошибками", desc: "Разобрать 5 ошибок в журнале", icon: Eraser, test: (s) => s.resolvedMistakes >= 5, progress: (s) => ({ cur: Math.min(s.resolvedMistakes, 5), goal: 5 }) },
-  { id: "sniper", title: "Вероятностный снайпер", desc: "80%+ точности в тренажёре вероятностей", icon: Crosshair, test: (s) => s.probBest >= 80, progress: (s) => ({ cur: Math.min(s.probBest, 80), goal: 80 }) },
-  { id: "night-owl", title: "Ночная сова", desc: "Решить вариант после 22:00", icon: Moon, test: (s) => s.nightOwl, progress: (s) => ({ cur: s.nightOwl ? 1 : 0, goal: 1 }) },
-  { id: "ninety", title: "Почти сотка", desc: "Набрать 90+ тестовых баллов", icon: Crown, test: (s) => s.best >= 90, progress: (s) => ({ cur: Math.min(s.best, 90), goal: 90 }) },
+  { id: "first-task", title: "Первый шаг", desc: "Решить свою первую задачу", icon: Footprints, xp: 20, test: (s) => s.solvedTasks >= 1, progress: (s) => ({ cur: Math.min(s.solvedTasks, 1), goal: 1 }) },
+  { id: "first-variant", title: "Боевое крещение", desc: "Завершить свой первый вариант", icon: ClipboardList, xp: 40, test: (s) => s.attempts >= 1, progress: (s) => ({ cur: Math.min(s.attempts, 1), goal: 1 }) },
+  { id: "warmup", title: "Разогрев", desc: "Решить 3 варианта", icon: Zap, xp: 50, test: (s) => s.attempts >= 3, progress: (s) => ({ cur: Math.min(s.attempts, 3), goal: 3 }) },
+  { id: "marathon", title: "Марафонец", desc: "Решить 5 вариантов", icon: Timer, xp: 80, test: (s) => s.attempts >= 5, progress: (s) => ({ cur: Math.min(s.attempts, 5), goal: 5 }) },
+  { id: "streak-7", title: "Марафон · 7 дней", desc: "Удержать ударный режим 7 дней подряд", icon: Flame, xp: 60, test: (s) => s.streak >= 7, progress: (s) => ({ cur: Math.min(s.streak, 7), goal: 7 }) },
+  { id: "streak-14", title: "Марафон · 14 дней", desc: "Удержать ударный режим 14 дней подряд", icon: Flame, xp: 100, test: (s) => s.streak >= 14, progress: (s) => ({ cur: Math.min(s.streak, 14), goal: 14 }) },
+  { id: "streak-30", title: "Марафон · 30 дней", desc: "Месяц без пропусков. Железная дисциплина", icon: CalendarCheck, xp: 200, test: (s) => s.streak >= 30, progress: (s) => ({ cur: Math.min(s.streak, 30), goal: 30 }) },
+  { id: "prob-genius", title: "Гений вероятностей", desc: "Решить 50 задач по теории вероятностей", icon: Crosshair, xp: 150, test: (s) => s.probSolved >= 50, progress: (s) => ({ cur: Math.min(s.probSolved, 50), goal: 50 }) },
+  { id: "flawless", title: "Без ошибок", desc: "Сдать вариант на 100% — ни одного промаха", icon: Star, xp: 250, test: (s) => s.perfectVariants >= 1, progress: (s) => ({ cur: Math.min(s.perfectVariants, 1), goal: 1 }) },
+  { id: "threshold", title: "Порог пройден", desc: "Набрать 70+ тестовых баллов", icon: Target, xp: 60, test: (s) => s.best >= 70, progress: (s) => ({ cur: Math.min(s.best, 70), goal: 70 }) },
+  { id: "eighty", title: "Восемьдесят!", desc: "Набрать 80+ тестовых баллов", icon: TrendingUp, xp: 90, test: (s) => s.best >= 80, progress: (s) => ({ cur: Math.min(s.best, 80), goal: 80 }) },
+  { id: "ninety", title: "Почти сотка", desc: "Набрать 90+ тестовых баллов", icon: Crown, xp: 120, test: (s) => s.best >= 90, progress: (s) => ({ cur: Math.min(s.best, 90), goal: 90 }) },
+  { id: "hundred", title: "Сотка!", desc: "100 баллов за вариант. Легенда", icon: Star, xp: 300, test: (s) => s.best >= 100, progress: (s) => ({ cur: Math.min(s.best, 100), goal: 100 }) },
+  { id: "eraser", title: "Охотник за ошибками", desc: "Разобрать 5 ошибок в журнале", icon: Eraser, xp: 50, test: (s) => s.resolvedMistakes >= 5, progress: (s) => ({ cur: Math.min(s.resolvedMistakes, 5), goal: 5 }) },
+  { id: "sniper", title: "Вероятностный снайпер", desc: "80%+ точности в тренажёре вероятностей", icon: Crosshair, xp: 70, test: (s) => s.probBest >= 80, progress: (s) => ({ cur: Math.min(s.probBest, 80), goal: 80 }) },
+  { id: "night-owl", title: "Ночная сова", desc: "Решить вариант после 22:00", icon: Moon, xp: 30, test: (s) => s.nightOwl, progress: (s) => ({ cur: s.nightOwl ? 1 : 0, goal: 1 }) },
 ];
 
 /* ─────────────── рейтинг (приватность: имя + ник, без фамилий) ─────────────── */

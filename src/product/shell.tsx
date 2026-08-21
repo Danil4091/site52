@@ -76,7 +76,7 @@ export function LiveTicker() {
 
 export function Header() {
   const { theme, toggle } = useTheme();
-  const { user, route, go, logout } = useApp();
+  const { user, route, go, logout, streak } = useApp();
 
   const activeNav: Route = route === "run" ? "variants" : route === "results" ? "analytics" : route;
 
@@ -118,9 +118,14 @@ export function Header() {
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
           <NotificationsBell />
-          <span className="hidden items-center gap-1 rounded-full bg-board-800/70 px-2.5 py-1.5 text-[12px] font-bold tabular-nums text-mark-red md:flex" title="Дней тренировок подряд">
-            <Flame className="h-3.5 w-3.5" />6
+          <span className="hidden items-center gap-1 rounded-full bg-board-800/70 px-2.5 py-1.5 text-[12px] font-bold tabular-nums text-mark-red md:flex" title={`Серия: ${streak.days} дн. подряд · ${streak.xp} XP`}>
+            <Flame className="h-3.5 w-3.5" />{streak.days}
           </span>
+          <button onClick={() => go("achieve")}
+            className={`hidden h-9 w-9 items-center justify-center rounded-lg border transition-colors duration-200 md:flex ${route === "achieve" || route === "rating" ? "border-mark-yellow/60 bg-board-700 text-mark-yellow" : "border-board-600/70 bg-board-800/60 text-chalk-400 hover:border-mark-yellow/50 hover:text-mark-yellow"}`}
+            aria-label="Достижения" title="Достижения">
+            <Trophy className="h-4 w-4" />
+          </button>
 
           {user ? (
             <>
@@ -192,9 +197,24 @@ export function Footer() {
         <nav className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] font-semibold text-chalk-500">
           <button onClick={() => go("bank")} className="transition-colors hover:text-mark-yellow">Банк заданий</button>
           <button onClick={() => go("variants")} className="transition-colors hover:text-mark-yellow">Варианты</button>
-          <button onClick={() => go("rating")} className="transition-colors hover:text-mark-yellow">Рейтинг</button>
+          <button onClick={() => go("rating")} className="transition-colors hover:text-mark-yellow">Рейтинг и ачивки</button>
         </nav>
         <p className="ml-auto text-[11px] text-chalk-600">© 2026 · Даниил Пудов · Сыктывкар</p>
+      </div>
+      <div className="mx-auto mt-3 flex max-w-[1380px] flex-wrap items-center gap-x-4 gap-y-1 px-4 sm:px-5">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("komi:legal", { detail: "privacy" }))}
+          className="text-[11px] font-semibold text-chalk-600 underline-offset-2 transition-colors hover:text-mark-blue hover:underline"
+        >
+          Политика конфиденциальности
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("komi:legal", { detail: "terms" }))}
+          className="text-[11px] font-semibold text-chalk-600 underline-offset-2 transition-colors hover:text-mark-blue hover:underline"
+        >
+          Пользовательское соглашение (Оферта)
+        </button>
+        <span className="text-[11px] text-chalk-600">152-ФЗ · самозанятый</span>
       </div>
     </footer>
   );

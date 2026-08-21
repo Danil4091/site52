@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional
@@ -23,7 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from .models import Base, ExamType, Task
 
-DATABASE_URL = "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor"
+# Все секреты и параметры — только из переменных окружения (см. .env.example).
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -43,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Репетитор из Коми · API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -278,3 +283,23 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     return {"id": str(user.id), "nickname": user.nickname}
+
+
+class ForgotPasswordIn(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
+    """Запрос ссылки для сброса пароля.
+
+    Всегда возвращает успех, чтобы не раскрывать, зарегистрирован ли e-mail
+    (защита от enumeration-атак). Реальная отправка письма подключается здесь.
+    """
+    from .models import User
+    user = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+    if user:
+        # TODO(prod): сгенерировать одноразовый токен, сохранить с TTL 30 мин
+        # и отправить письмо со ссылкой {FRONTEND_URL}/reset?token=…
+        pass
+    return {"ok": True, "message": "Если e-mail зарегистрирован, письмо отправлено"}
