@@ -141,3 +141,19 @@ class TaskAttempt(Base):
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[AttemptStatus] = mapped_column(PyEnum(AttemptStatus, name="attempt_status"), nullable=False)
     given_answer: Mapped[Optional[str]] = mapped_column(String(100))
+
+
+class TaskProgress(Base):
+    """Прогресс тренажёра: какие задачи темы пользователь решил ВЕРНО.
+
+    Именно по связи (user_id, task_id) лента исключает дубли:
+    в выдачу попадают только ещё не решённые задачи.
+    """
+    __tablename__ = "task_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "task_id", name="uq_progress_user_task"),
+        Index("ix_progress_user_topic", "user_id"),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    solved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

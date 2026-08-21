@@ -7,98 +7,8 @@ import { useApp, type CustomTask } from "./store";
 import {
   BANK, PROB_PROBLEMS, REAL_VARIANT, TASK_OF_DAY, VARIANTS, answersMatch, daysUntilExam, greeting,
 } from "./data";
-import { Heatmap, LatexText, Numpad, sanitizeAnswer, Sparkline, StreakFlame, TaskImage, XpBar } from "./ui";
+import { AnswerInput, Heatmap, LatexText, Sparkline, StreakFlame, TaskImage, XpBar } from "./ui";
 import { FloatingFormulas, useTypewriter } from "./shell";
-
-/* единый формат задачи для тренировок: вариант + банк + тренажёр */
-export interface PoolTask {
-  number: number; category: string; part: 1 | 2;
-  statement: string; answer?: string; solution?: string;
-  imageUrls?: string[];
-}
-
-function usePool(): PoolTask[] {
-  const { taskBank } = useApp();
-  return useMemo(() => {
-    const base: PoolTask[] = REAL_VARIANT.map((t) => ({
-      number: t.number, category: t.category, part: t.part,
-      statement: t.statement, answer: t.answer, solution: t.solution ?? t.criteria, imageUrls: t.imageUrls,
-    }));
-    const custom: PoolTask[] = taskBank
-      .filter((t) => t.exam_type === "ege")
-      .map((t: CustomTask) => ({
-        number: t.task_number, category: t.topic, part: t.is_second_part ? 2 : 1,
-        statement: t.condition_text, answer: t.correct_answer ?? undefined, solution: t.solution_text,
-      }));
-    const prob: PoolTask[] = PROB_PROBLEMS.map((p) => ({
-      number: /сложная/i.test(p.topic) ? 5 : 4, category: p.topic, part: 1,
-      statement: p.text, answer: p.answer, solution: p.explain,
-    }));
-    return [...base, ...custom, ...prob];
-  }, [taskBank]);
-}
-
-/* ── мини-решатель одной задачи (банк/тренировки) ── */
-function MiniSolve({ task }: { task: PoolTask }) {
-  const { recordAnswer } = useApp();
-  const [input, setInput] = useState("");
-  const [verdict, setVerdict] = useState<null | boolean>(null);
-  const [revealed, setRevealed] = useState(false);
-
-  const check = () => {
-    if (!task.answer || !input.trim()) return;
-    const ok = answersMatch(input, task.answer);
-    setVerdict(ok);
-    recordAnswer(task.number, ok);
-  };
-
-  return (
-    <div className="mt-3 rounded-xl border border-board-700/60 bg-board-900/50 p-4">
-      <p className="text-[13.5px] leading-relaxed text-chalk-200"><LatexText text={task.statement} /></p>
-      {task.imageUrls?.map((src, i) => <TaskImage key={i} src={src} alt={`Чертёж к заданию ${task.number}`} />)}
-
-      {task.part === 1 && task.answer ? (
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
-          <div>
-            <input
-              value={input}
-              onChange={(e) => { setInput(sanitizeAnswer(e.target.value)); setVerdict(null); }}
-              onKeyDown={(e) => e.key === "Enter" && check()}
-              placeholder="Ответ — только цифры, «-» и «,»"
-              inputMode="decimal"
-              className="w-full rounded-lg border-2 border-board-600/70 bg-board-950/50 px-4 py-2.5 font-mono text-base font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[12.5px] placeholder:font-normal placeholder:text-chalk-500 focus:border-mark-yellow focus:ring-4 focus:ring-mark-yellow/10"
-              aria-label="Ответ"
-            />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button onClick={check} disabled={!input.trim()} className="btn-gold px-4 py-2 text-[12.5px] disabled:opacity-40">Проверить</button>
-              {(input.trim() || verdict !== null) && (
-                <button onClick={() => setRevealed((r) => !r)} className="btn-ghost px-3.5 py-2 text-[12px]">
-                  <Eye className="h-3.5 w-3.5" /> {revealed ? "Скрыть решение" : "Показать решение"}
-                </button>
-              )}
-              {verdict === true && <span className="pop-in text-[12.5px] font-bold text-mark-green">Верно! +10 XP</span>}
-              {verdict === false && <span className="pop-in text-[12.5px] font-bold text-mark-red">Неверно — загляните в разбор</span>}
-            </div>
-            <Numpad value={input} onChange={(v) => { setInput(v); setVerdict(null); }} onSubmit={check} className="mt-3 md:hidden" />
-          </div>
-          <Numpad value={input} onChange={(v) => { setInput(v); setVerdict(null); }} onSubmit={check} className="hidden md:grid" />
-        </div>
-      ) : (
-        <button onClick={() => setRevealed((r) => !r)} className="btn-ghost mt-4 px-4 py-2 text-[12.5px]">
-          <Eye className="h-3.5 w-3.5" /> {revealed ? "Скрыть решение" : "Показать решение"}
-        </button>
-      )}
-
-      {revealed && task.solution && (
-        <div className="pop-in mt-3 rounded-lg border border-mark-yellow/30 bg-mark-yellow/5 p-3.5">
-          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-mark-yellow"><Lightbulb className="h-3.5 w-3.5" />Разбор</p>
-          <p className="text-[13px] leading-relaxed text-chalk-200"><LatexText text={task.solution} /></p>
-          {task.answer && <p className="mt-1.5 font-mono text-[12.5px] font-bold text-mark-green">Ответ: {task.answer.replace(".", ",")}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ═══════════════════════ ГЛАВНАЯ ═══════════════════════ */
 export function HomePage() {
@@ -233,9 +143,7 @@ function TaskOfDayBlock() {
     <>
       <p className="mt-2.5 text-[13px] leading-relaxed text-chalk-300">{TASK_OF_DAY.statement}</p>
       <div className="mt-3 flex gap-2">
-        <input value={input} onChange={(e) => { setInput(sanitizeAnswer(e.target.value)); setVerdict(null); }} onKeyDown={(e) => e.key === "Enter" && check()}
-          placeholder="Ответ" inputMode="decimal"
-          className="w-full rounded-lg border-2 border-board-600/70 bg-board-950/50 px-3.5 py-2 font-mono text-[14px] font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[12px] placeholder:font-normal placeholder:text-chalk-500 focus:border-mark-yellow" />
+        <AnswerInput label="Задача дня" value={input} onChange={(v) => { setInput(v); setVerdict(null); }} onSubmit={check} placeholder="Ответ" className="!py-2 !text-[14px]" />
         <button onClick={check} className="btn-gold shrink-0 px-4 py-2 text-[12.5px]">ОК</button>
       </div>
       {verdict !== null && (
@@ -255,8 +163,7 @@ function TaskOfDayBlock() {
 import { heatColor } from "./ui";
 
 export function BankPage() {
-  const { topicStats, go } = useApp();
-  const pool = usePool();
+  const { topicStats, go, openTrainer } = useApp();
   const [part, setPart] = useState<0 | 1 | 2>(0);
   const [open, setOpen] = useState<number | null>(null);
 
@@ -282,7 +189,6 @@ export function BankPage() {
           const s = topicStats[t.number] ?? { solved: 0, attempts: 0 };
           const h = heatColor(s.solved, s.attempts);
           const isOpen = open === t.number;
-          const tasks = pool.filter((p) => p.number === t.number);
           return (
             <div key={t.number} className={`card card-hover rise rise-${Math.min((i % 5) + 1, 5)} ${isOpen ? "sm:col-span-2 lg:col-span-3" : ""}`}>
               <button onClick={() => setOpen(isOpen ? null : t.number)} className="flex w-full items-center gap-3 p-4 text-left">
@@ -293,16 +199,17 @@ export function BankPage() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13.5px] font-bold text-chalk-50">{t.topic}</span>
                   <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-chalk-500">
-                    часть {t.part} · {s.attempts ? `${h.label} из ${s.attempts} попыток` : "ещё не решали"} · {tasks.length} зад.
+                    часть {t.part} · {s.attempts ? `${h.label} из ${s.attempts} попыток` : "ещё не решали"}
                   </span>
                 </span>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-chalk-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
               </button>
               {isOpen && (
-                <div className="pop-in border-t border-board-700/60 p-4">
-                  <p className="mb-2 text-[12.5px] leading-relaxed text-chalk-400">{t.note}</p>
-                  {tasks.slice(0, 2).map((task, j) => <MiniSolve key={`${task.number}-${j}`} task={task} />)}
-                  {tasks.length === 0 && <p className="text-[12px] text-chalk-500">Задачи по теме добавит преподаватель в кабинете.</p>}
+                <div className="pop-in flex flex-wrap items-center gap-4 border-t border-board-700/60 p-4">
+                  <p className="min-w-[220px] flex-1 text-[12.5px] leading-relaxed text-chalk-400">{t.note}</p>
+                  <button onClick={() => openTrainer(t.number)} className="btn-gold px-5 py-3 text-[13px]">
+                    <Play className="h-4 w-4" /> Открыть тренажёр темы
+                  </button>
                 </div>
               )}
             </div>
@@ -443,34 +350,26 @@ export function RunPage() {
         {task.imageUrls?.map((src, i) => <TaskImage key={i} src={src} alt={`Чертёж к заданию ${task.number}`} />)}
 
         {task.part === 1 ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-[1fr_230px]">
-            <div>
-              <input
-                value={answers[task.number] ?? ""}
-                onChange={(e) => setAns(sanitizeAnswer(e.target.value))}
-                onKeyDown={(e) => e.key === "Enter" && current < 12 && setCurrent((c) => c + 1)}
-                placeholder="Ответ — только цифры, «-» и «,»"
-                inputMode="decimal"
-                className="w-full rounded-lg border-2 border-board-600/70 bg-board-950/50 px-4 py-3 font-mono text-lg font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[13px] placeholder:font-normal placeholder:text-chalk-500 focus:border-mark-yellow focus:ring-4 focus:ring-mark-yellow/10"
-                aria-label={`Ответ к заданию ${task.number}`}
-                autoFocus
-              />
-              {task.hint && <p className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-chalk-500"><Lightbulb className="h-3.5 w-3.5 shrink-0 text-mark-yellow" />{task.hint}</p>}
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={() => setCurrent((c) => Math.max(1, c - 1))} disabled={current === 1} className="btn-ghost px-4 py-2.5 text-[13px] disabled:opacity-30">← Назад</button>
-                {(answers[task.number] ?? "").trim() && (
-                  <button onClick={() => setRevealed((r) => ({ ...r, [task.number]: !r[task.number] }))} className="btn-ghost px-4 py-2.5 text-[13px]">
-                    <Eye className="h-4 w-4" /> {revealed[task.number] ? "Скрыть решение" : "Показать решение"}
-                  </button>
-                )}
-                <button onClick={() => setCurrent((c) => Math.min(19, c + 1))} disabled={current === 19} className="btn-gold ml-auto px-5 py-2.5 text-[13px] disabled:opacity-30">Дальше →</button>
-              </div>
-              <Numpad value={answers[task.number] ?? ""} onChange={setAns} onSubmit={() => current < 12 && setCurrent((c) => c + 1)} className="mt-4 md:hidden" />
+          <div className="mt-5">
+            <AnswerInput
+              label={`№${task.number} · ${task.category}`}
+              value={answers[task.number] ?? ""}
+              onChange={setAns}
+              onSubmit={() => setCurrent((c) => Math.min(19, c + 1))}
+              placeholder="Ответ — только цифры, «-» и «,»"
+              autoFocus
+            />
+            {task.hint && <p className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-chalk-500"><Lightbulb className="h-3.5 w-3.5 shrink-0 text-mark-yellow" />{task.hint}</p>}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button onClick={() => setCurrent((c) => Math.max(1, c - 1))} disabled={current === 1} className="btn-ghost px-4 py-2.5 text-[13px] disabled:opacity-30">← Назад</button>
+              {(answers[task.number] ?? "").trim() && (
+                <button onClick={() => setRevealed((r) => ({ ...r, [task.number]: !r[task.number] }))} className="btn-ghost px-4 py-2.5 text-[13px]">
+                  <Eye className="h-4 w-4" /> {revealed[task.number] ? "Скрыть решение" : "Показать решение"}
+                </button>
+              )}
+              <button onClick={() => setCurrent((c) => Math.min(19, c + 1))} disabled={current === 19} className="btn-gold ml-auto px-5 py-2.5 text-[13px] disabled:opacity-30">Дальше →</button>
             </div>
-            <div className="hidden md:block">
-              <Numpad value={answers[task.number] ?? ""} onChange={setAns} onSubmit={() => current < 12 && setCurrent((c) => c + 1)} />
-              <p className="mt-2 text-center text-[10.5px] text-chalk-600">клавиатура принимает только цифры, «-» и «,»</p>
-            </div>
+            <p className="mt-3 text-[10.5px] text-chalk-600">Подсвеченная клавиатура печатает в это поле и принимает только цифры, «-» и «,»</p>
           </div>
         ) : (
           <div className="mt-5 rounded-lg border border-mark-blue/30 bg-mark-blue/5 p-4">
@@ -619,25 +518,21 @@ export function ProbabilityPage() {
                 )}
               </div>
               <p className="mt-3 text-[13.5px] leading-relaxed text-chalk-200"><LatexText text={p.text} /></p>
-              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
-                <div>
-                  <input
-                    value={inputs[p.id] ?? ""}
-                    onChange={(e) => setInputs((x) => ({ ...x, [p.id]: sanitizeAnswer(e.target.value) }))}
-                    onKeyDown={(e) => e.key === "Enter" && check(p.id, p.answer)}
-                    placeholder="Например 0,375" inputMode="decimal"
-                    className="w-full rounded-lg border-2 border-board-600/70 bg-board-950/50 px-4 py-2.5 font-mono text-[15px] font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[12.5px] placeholder:font-normal placeholder:text-chalk-500 focus:border-mark-yellow"
-                    aria-label={`Ответ: ${p.topic}`}
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <button onClick={() => check(p.id, p.answer)} className="btn-gold px-4 py-2 text-[12.5px]">Проверить</button>
-                    <button onClick={() => setRevealed((r) => ({ ...r, [p.id]: !r[p.id] }))} className="btn-ghost px-3.5 py-2 text-[12px]">
-                      <Eye className="h-3.5 w-3.5" /> {revealed[p.id] ? "Скрыть" : "Показать решение"}
-                    </button>
-                  </div>
-                  <Numpad value={inputs[p.id] ?? ""} onChange={(val) => setInputs((x) => ({ ...x, [p.id]: val }))} onSubmit={() => check(p.id, p.answer)} className="mt-3 md:hidden" />
+              <div className="mt-4">
+                <AnswerInput
+                  label={`№${i < 5 ? 4 : 5} · ${p.topic}`}
+                  value={inputs[p.id] ?? ""}
+                  onChange={(val) => setInputs((x) => ({ ...x, [p.id]: val }))}
+                  onSubmit={() => check(p.id, p.answer)}
+                  placeholder="Например 0,375"
+                  className="!py-2.5 !text-[15px]"
+                />
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => check(p.id, p.answer)} className="btn-gold px-4 py-2 text-[12.5px]">Проверить</button>
+                  <button onClick={() => setRevealed((r) => ({ ...r, [p.id]: !r[p.id] }))} className="btn-ghost px-3.5 py-2 text-[12px]">
+                    <Eye className="h-3.5 w-3.5" /> {revealed[p.id] ? "Скрыть" : "Показать решение"}
+                  </button>
                 </div>
-                <Numpad value={inputs[p.id] ?? ""} onChange={(val) => setInputs((x) => ({ ...x, [p.id]: val }))} onSubmit={() => check(p.id, p.answer)} className="hidden md:grid" />
               </div>
               {revealed[p.id] && (
                 <p className="pop-in mt-3 rounded-lg border border-mark-yellow/25 bg-mark-yellow/5 p-3 text-[12.5px] leading-relaxed text-chalk-200">

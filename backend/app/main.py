@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -159,6 +160,105 @@ async def topics(exam_type: ExamType = ExamType.EGE, db: AsyncSession = Depends(
     for t in rows:
         by_topic[t.topic] = by_topic.get(t.topic, 0) + 1
     return [{"topic": k, "count": v} for k, v in sorted(by_topic.items())]
+
+
+# ─────────────────── тренажёр темы: лента + проверка ───────────────────
+from .models import TaskProgress  # noqa: E402
+
+
+def normalize_answer(raw: str) -> str:
+    """« 0,15 » → «0.15»: регистр, пробелы и запятая не значат."""
+    return "".join(raw.lower().split()).replace(",", ".")
+
+
+def answers_match(given: str, reference: str) -> bool:
+    """Числовое сравнение: 0.150 == 0,15 == 0.15 (не строковое!)."""
+    g, r = normalize_answer(given), normalize_answer(reference)
+    if g == r:
+        return True
+    try:
+        return abs(float(g) - float(r)) < 1e-9
+    except ValueError:
+        return False
+
+
+@app.get("/api/topics/{number}/feed")
+async def topic_feed(
+    number: int,
+    limit: Optional[int] = Query(default=5, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    user_id: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Страница пула темы: ТОЛЬКО нерешённые задачи пользователя.
+
+    Дедупликация — LEFT JOIN task_progress по (user_id, task_id):
+    решённые верно задачи в выдачу не попадают, limit/offset считаются
+    внутри отфильтрованного списка (зеркалит демо-режим фронтенда).
+    user_id временно передаётся параметром; в проде — из JWT.
+    """
+    uid = uuid.UUID(user_id) if user_id else None
+
+    solved_ids = []
+    if uid:
+        rows = (await db.execute(
+            select(TaskProgress.task_id).where(TaskProgress.user_id == uid)
+        )).scalars().all()
+        solved_ids = list(rows)
+
+    stmt = (
+        select(Task)
+        .where(Task.is_published.is_(True), Task.task_number == number, Task.is_second_part.is_(False))
+        .order_by(Task.id)
+    )
+    pool = list((await db.execute(stmt)).scalars().all())
+    unsolved = [t for t in pool if t.id not in solved_ids]
+
+    end = None if limit is None else offset + limit
+    items = unsolved[offset:end]
+    return {
+        "items": [TaskOut.from_orm_(t) for t in items],
+        "meta": {
+            "total": len(pool),
+            "solved": len(pool) - len(unsolved),
+            "remaining": len(unsolved),
+            "hasMore": end is not None and end < len(unsolved),
+        },
+    }
+
+
+class CheckIn(BaseModel):
+    answer: str
+    user_id: Optional[str] = None  # в проде — из JWT
+
+
+@app.post("/api/tasks/{task_id}/check")
+async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get_db)):
+    """Проверка ответа с числовой нормализацией; верный ответ
+    фиксируется в task_progress → задача больше не попадёт в ленту."""
+    task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Задача не найдена")
+    if not task.correct_answer:
+        raise HTTPException(400, "Задача части 2 проверяется преподавателем вручную")
+
+    correct = answers_match(body.answer, task.correct_answer)
+    if correct and body.user_id:
+        uid = uuid.UUID(body.user_id)
+        existing = (await db.execute(
+            select(TaskProgress).where(
+                TaskProgress.user_id == uid, TaskProgress.task_id == task.id
+            )
+        )).scalar_one_or_none()
+        if not existing:
+            db.add(TaskProgress(user_id=uid, task_id=task.id))
+            await db.commit()
+
+    return {
+        "correct": correct,
+        "normalized_given": normalize_answer(body.answer),
+        "normalized_answer": normalize_answer(task.correct_answer),
+    }
 
 
 # ─────────────────────────── регистрация ───────────────────────────

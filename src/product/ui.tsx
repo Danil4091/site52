@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { Check, Delete, Eraser, Flame, Minus } from "lucide-react";
+import { Check, Delete, Eraser, Flame, Keyboard, Minus } from "lucide-react";
 
 /* ═══════════════════════ LaTeX-рендеринг ═══════════════════════
    Принимает строку из базы/API и рендерит:
@@ -267,5 +267,141 @@ export function Sparkline({ values, width = 160, height = 44 }: { values: number
       <polyline points={pts.join(" ")} fill="none" stroke="var(--color-mark-yellow)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={lx} cy={ly} r="3.5" fill="var(--color-mark-yellow)" />
     </svg>
+  );
+}
+
+/* ═══════════════════════ ГЛОБАЛЬНАЯ ПЛАВАЮЩАЯ КЛАВИАТУРА ═══════════════════════
+   Одна клавиатура на всё приложение: N карт-задач = 1 клавиатура в DOM.
+   AnswerInput при фокусе регистрирует себя; NumpadDock печатает строго
+   в активное поле. preventDefault на pointerdown не даёт инпуту потерять
+   фокус при клике по клавише — ввод никогда не «улетает» в соседнее поле. */
+
+export interface FieldHandle {
+  label: string;
+  get: () => string;
+  set: (v: string) => void;
+  submit: () => void;
+}
+
+interface DockApi {
+  register: (h: FieldHandle | null) => void;
+}
+
+const DockCtx = createContext<DockApi>({ register: () => {} });
+export const useFieldDock = () => useContext(DockCtx);
+
+function NumpadDock({ active, press }: { active: FieldHandle | null; press: (k: string) => void }) {
+  if (!active) return null;
+  return (
+    <div
+      className="dock-in fixed inset-x-2 bottom-[4.6rem] z-40 md:inset-x-auto md:bottom-5 md:right-5 md:w-[264px]"
+      role="group"
+      aria-label={`Экранная клавиатура — ввод в ${active.label}`}
+    >
+      <div className="rounded-2xl border border-board-600/70 bg-board-850/95 p-3 shadow-2xl shadow-black/50 backdrop-blur">
+        <div className="mb-2 flex items-center gap-2 px-1">
+          <Keyboard className="h-3.5 w-3.5 text-mark-yellow" />
+          <span className="truncate text-[10.5px] font-bold uppercase tracking-wider text-chalk-400">
+            ввод: <span className="text-mark-yellow">{active.label}</span>
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {KEYS.map(({ k, kind }) => (
+            <button
+              key={k}
+              type="button"
+              /* preventDefault сохраняет фокус на активном инпуте */
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => press(k)}
+              className={`numpad-key flex items-center justify-center ${
+                kind === "ok" ? "!bg-mark-green !text-board-950" :
+                kind === "danger" ? "!text-mark-red" :
+                kind === "fn" ? "!text-mark-yellow" : ""
+              }`}
+              aria-label={k === "back" ? "Стереть символ" : k === "clear" ? "Очистить" : k === "ok" ? "Проверить" : k}
+            >
+              {k === "back" ? <Delete className="h-5 w-5" /> :
+               k === "clear" ? <Eraser className="h-5 w-5" /> :
+               k === "ok" ? <Check className="h-5 w-5" /> :
+               k === "-" ? <Minus className="h-4 w-4" /> : k}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FieldDockProvider({ children }: { children: React.ReactNode }) {
+  const handleRef = useRef<FieldHandle | null>(null);
+  const [active, setActive] = useState<FieldHandle | null>(null);
+
+  const register = useCallback((h: FieldHandle | null) => {
+    handleRef.current = h;
+    setActive(h);
+  }, []);
+
+  const press = useCallback((k: string) => {
+    const h = handleRef.current;
+    if (!h) return;
+    if (k === "back") return h.set(h.get().slice(0, -1));
+    if (k === "clear") return h.set("");
+    if (k === "ok") return h.submit();
+    h.set(sanitizeAnswer(h.get() + k));
+  }, []);
+
+  return (
+    <DockCtx.Provider value={{ register }}>
+      {children}
+      <NumpadDock active={active} press={press} />
+    </DockCtx.Provider>
+  );
+}
+
+/** Инпут ответа, пристыкованный к глобальной клавиатуре.
+    Принимает только цифры, «-», «,» и «.» — остальное отбрасывается. */
+export function AnswerInput({
+  label, value, onChange, onSubmit, placeholder = "Ответ — только цифры, «-» и «,»",
+  autoFocus, invalid, className = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  invalid?: boolean;
+  className?: string;
+}) {
+  const { register } = useFieldDock();
+  const ref = useRef({ value, onChange, onSubmit });
+  ref.current = { value, onChange, onSubmit };
+
+  /* при размонтировании поля клавиатура скрывается */
+  useEffect(() => () => register(null), [register]);
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(sanitizeAnswer(e.target.value))}
+      onFocus={() => register({
+        label,
+        get: () => ref.current.value,
+        set: ref.current.onChange,
+        submit: ref.current.onSubmit,
+      })}
+      onBlur={() => register(null)}
+      onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+      placeholder={placeholder}
+      inputMode="decimal"
+      autoComplete="off"
+      autoFocus={autoFocus}
+      aria-label={`Ответ: ${label}`}
+      className={`w-full rounded-lg border-2 bg-board-950/50 px-4 py-3 font-mono text-lg font-semibold text-chalk-50 outline-none transition-all placeholder:font-sans placeholder:text-[13px] placeholder:font-normal placeholder:text-chalk-500 focus:ring-4 ${
+        invalid
+          ? "shake border-mark-red focus:border-mark-red focus:ring-mark-red/10"
+          : "border-board-600/70 focus:border-mark-yellow focus:ring-mark-yellow/10"
+      } ${className}`}
+    />
   );
 }

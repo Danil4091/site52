@@ -16,7 +16,7 @@ export interface ProductUser {
 
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
-  | "analytics" | "admin" | "rating" | "mistakes" | "achieve";
+  | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
@@ -89,6 +89,13 @@ interface AppState {
   todaySolved: boolean;
   taskBank: CustomTask[];
 
+  /* тренажёр темы: очередь + решённые задачи (персист, дедуп на бэке/фронте) */
+  trainerTopic: number | null;
+  solvedTaskIds: string[];
+  openTrainer: (n: number) => void;
+  markTaskSolved: (taskId: string, taskNumber: number) => void;
+  celebrate: () => void;
+
   go: (r: Route) => void;
   login: (u: ProductUser) => void;
   logout: () => void;
@@ -140,6 +147,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [probBest, setProbBestState] = useState(0);
   const [streak, setStreak] = useState<StreakState>({ days: 0, best: 0, last: "", xp: 0 });
   const [taskBank, setTaskBank] = useState<CustomTask[]>(() => read<CustomTask[]>(TASKBANK_KEY, []));
+  const [trainerTopic, setTrainerTopic] = useState<number | null>(null);
+  const [solvedTaskIds, setSolvedTaskIds] = useState<string[]>([]);
   const justSwitched = useRef(false);
 
   /* загрузка данных при смене пользователя — демо-набор только у «artom» */
@@ -158,6 +167,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (st.last && st.last !== dayIso() && st.last !== yesterdayIso()) st.days = 0;
     if (demo && !st.last) { const d = { days: 6, best: 9, last: dayIso(), xp: 430 }; setStreak(d); }
     else setStreak(st);
+    setSolvedTaskIds(read<string[]>(scoped("komi-solvedtasks", s), []));
+    setTrainerTopic(null);
     setNotifs(demo ? [
       { id: 1, type: "achievement", title: "Серия — 6 дней!", body: "Ещё один день — и рекорд месяца по тренировкам будет вашим.", time: "2 ч назад", read: false },
       { id: 2, type: "lesson", title: "Занятие завтра в 18:00", body: "Даниил разберёт №18 «Параметры». Подготовьте вопросы по графическому методу.", time: "5 ч назад", read: false },
@@ -173,6 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (scope !== "guest") write(scoped("komi-topics", scope), topicStats); }, [topicStats, scope]);
   useEffect(() => { if (scope !== "guest") write(scoped("komi-streak", scope), streak); }, [streak, scope]);
   useEffect(() => { write(TASKBANK_KEY, taskBank); }, [taskBank]);
+  useEffect(() => { if (scope !== "guest") write(scoped("komi-solvedtasks", scope), solvedTaskIds); }, [solvedTaskIds, scope]);
 
   const pushToast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -353,6 +365,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTaskBank((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  /* ── тренажёр темы ── */
+  const openTrainer = useCallback((n: number) => {
+    setTrainerTopic(n);
+    setRoute("trainer");
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  /** Задача решена верно: фиксируем id (дедуп), обновляем тему, стрик и XP. */
+  const markTaskSolved = useCallback((taskId: string, taskNumber: number) => {
+    setSolvedTaskIds((prev) => (prev.includes(taskId) ? prev : [...prev, taskId]));
+    registerSolve();
+    setTopicStats((prev) => {
+      const cur = prev[taskNumber] ?? { solved: 0, attempts: 0 };
+      return { ...prev, [taskNumber]: { solved: cur.solved + 1, attempts: cur.attempts + 1 } };
+    });
+    setStreak((s) => ({ ...s, xp: s.xp + 10 }));
+  }, [registerSolve]);
+
+  const celebrate = useCallback(() => setBurst((b) => b + 1), []);
+
   const importTasks = useCallback((list: CustomTask[]) => {
     let added = 0, skipped = 0;
     setTaskBank((prev) => {
@@ -374,6 +406,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     user, scope, route, attempts, mistakes, unlocked, topicStats, notifs, toasts, burst,
     variantId, lastResult, nightOwl, probBest,
     streak, todaySolved, taskBank,
+    trainerTopic, solvedTaskIds, openTrainer, markTaskSolved, celebrate,
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,
