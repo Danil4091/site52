@@ -32,6 +32,30 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   }
 }
 
+/* ── Глобальные ловушки: ошибки уровня модулей и асинхронные ошибки
+      (их НЕ перехватывает React ErrorBoundary). Вместо пустого экрана
+      показываем диагностику, чтобы причину можно было увидеть и прислать. ── */
+function showFatal(message: string) {
+  const root = document.getElementById("root");
+  if (!root) return;
+  root.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b1f19;color:#e4dfcd;font-family:'JetBrains Mono',monospace;padding:24px">
+      <div style="max-width:640px">
+        <h1 style="font-size:22px;margin-bottom:12px">Не удалось запустить приложение</h1>
+        <pre style="white-space:pre-wrap;background:#122b22;padding:16px;border-radius:12px;font-size:12px;line-height:1.6">${message}</pre>
+        <p style="margin-top:12px;font-size:13px;opacity:.7">Попробуйте жёсткое обновление: Ctrl+Shift+R. Если не помогает — пришлите этот текст разработчику.</p>
+        <button onclick="location.reload(true)" style="margin-top:12px;padding:10px 18px;border-radius:10px;border:0;background:#f2c14e;color:#0b1f19;font-weight:700;cursor:pointer">Обновить</button>
+      </div>
+    </div>`;
+}
+window.addEventListener("error", (e) => {
+  if (e.error instanceof Error) showFatal(`${e.error.name}: ${e.error.message}\n${e.error.stack ?? ""}`);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  showFatal(r instanceof Error ? `${r.name}: ${r.message}` : String(r));
+});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
     <ThemeProvider>
