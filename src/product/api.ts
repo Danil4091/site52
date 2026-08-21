@@ -29,3 +29,40 @@ export function requestPasswordReset(email: string) {
     body: JSON.stringify({ email }),
   });
 }
+
+/* ─────────────────────────── Варианты (API v1) ─────────────────────────── */
+
+export interface VariantUploadResult {
+  variant_id: string;
+  short_code: string;
+  public_url: string;
+}
+
+/** Вход преподавателя → Bearer-токен (POST /api/v1/auth/login). */
+export function loginTeacher(email: string, password: string) {
+  return apiFetch<{ token: string; role: string; nickname: string }>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/** Публикация варианта на сервере (POST /api/v1/variants/upload, только преподаватель). */
+export function uploadVariant(payload: unknown, token: string) {
+  return apiFetch<VariantUploadResult>("/api/v1/variants/upload", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Публичное получение варианта по UUID или короткому коду (GET /api/v1/variants/{id}). */
+export function fetchVariant(variantId: string) {
+  return apiFetch<{
+    id: string;
+    variantTitle: string;
+    subject: string;
+    timeLimitMinutes: number;
+    tasks: unknown[];
+    publicUrl: string;
+  }>(`/api/v1/variants/${variantId}`);
+}

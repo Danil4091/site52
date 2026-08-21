@@ -17,7 +17,7 @@ from sqlalchemy import (
     Boolean, BigInteger, CheckConstraint, DateTime, Enum as PyEnum,
     ForeignKey, Index, Integer, String, Text, UniqueConstraint, func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -99,12 +99,33 @@ class Task(Base):
 
 
 class Variant(Base):
+    """Вариант, загруженный преподавателем.
+
+    Задачи хранятся целиком в JSONB-массиве (tasks_json) — это снимает
+    необходимость связки с таблицей tasks и позволяет хранить произвольный
+    авторский КИМ. ``short_code`` — короткий уникальный хэш для публичной ссылки.
+    """
+
     __tablename__ = "variants"
+    __table_args__ = (Index("ix_variants_teacher", "created_by_teacher_id"),)
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Короткий уникальный хэш для публичной ссылки (без путающих 0/O/1/I).
+    short_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    exam_type: Mapped[ExamType] = mapped_column(PyEnum(ExamType, name="exam_type"), nullable=False)
-    exam_year: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # math_profile / math_base
+    subject: Mapped[str] = mapped_column(String(32), nullable=False, default="math_profile")
+    time_limit_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=235)
+    # Массив объектов задач: [{ id, number, topic, latex_statement, answer,
+    #                          solution_latex, points, type }, ...]
+    tasks_json: Mapped[list] = mapped_column(JSONB, nullable=False)
+    # Преподаватель-составитель; NULL, если вариант системный/анонимный.
+    created_by_teacher_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class VariantTask(Base):

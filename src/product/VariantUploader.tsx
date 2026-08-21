@@ -4,10 +4,13 @@ import {
 } from "lucide-react";
 import { useApp } from "./store";
 import { LatexText } from "./ui";
+import { isApiEnabled, loginTeacher, uploadVariant } from "./api";
 import {
   sampleVariantJson, validateVariantJson, variantLink,
   type ParsedVariant, type PublishedVariant, type VariantValidationError,
 } from "./variantSchema";
+
+const TOKEN_KEY = "komi-teacher-token";
 
 /**
  * Загрузка и публикация авторских вариантов.
@@ -24,12 +27,17 @@ export default function VariantUploader() {
   const [errors, setErrors] = useState<VariantValidationError[]>([]);
   const [parsed, setParsed] = useState<ParsedVariant | null>(null);
   const [published, setPublished] = useState<PublishedVariant | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  /** Ссылка, возвращённая сервером (если вариант ушёл в БД). */
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setErrors([]);
     setParsed(null);
     setPublished(null);
+    setPublishing(false);
+    setServerUrl(null);
     setFileName(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -79,16 +87,49 @@ export default function VariantUploader() {
     handleFile(e.dataTransfer.files?.[0]);
   };
 
-  const doPublish = () => {
-    if (!parsed) return;
+  /** Публикация: при поднятом API — в БД (только преподаватель), иначе локально. */
+  const doPublish = async () => {
+    if (!parsed || publishing) return;
+    setPublishing(true);
+
+    if (isApiEnabled()) {
+      try {
+        // Токен преподавателя: берём сохранённый или логинимся (демо-доступ).
+        let token = localStorage.getItem(TOKEN_KEY) ?? "";
+        if (!token) {
+          const login = await loginTeacher("teacher@komi.ru", "1234");
+          token = login.token;
+          localStorage.setItem(TOKEN_KEY, token);
+        }
+        const res = await uploadVariant(parsed, token);
+        const pub: PublishedVariant = {
+          ...parsed,
+          id: res.variant_id,
+          linkCode: res.short_code,
+          publishedAt: new Date().toISOString(),
+          authorName: "Преподаватель",
+        };
+        setPublished(pub);
+        setServerUrl(res.public_url);
+        pushToast(`Вариант сохранён в базе · ${res.short_code}`);
+        setPublishing(false);
+        return;
+      } catch {
+        pushToast("Сервер недоступен — публикую локально (демо)");
+      }
+    }
+
+    // Локальная публикация (демо-режим или сервер лёг).
     const pub = publishVariant(parsed);
     setPublished(pub);
+    setServerUrl(null);
     pushToast(`Вариант опубликован · ссылка ${pub.linkCode}`);
+    setPublishing(false);
   };
 
   const copyLink = () => {
     if (!published) return;
-    navigator.clipboard?.writeText(variantLink(published.linkCode));
+    navigator.clipboard?.writeText(serverUrl ?? variantLink(published.linkCode));
     pushToast("Ссылка скопирована — отправьте ученикам");
   };
 
@@ -194,8 +235,17 @@ export default function VariantUploader() {
           {/* публикация */}
           {!published ? (
             <div className="mt-5 flex justify-center">
-              <button onClick={doPublish} className="btn-gold px-8 py-3.5 text-[15px]">
-                <Sparkles className="h-4 w-4" /> Опубликовать вариант
+              <button onClick={doPublish} disabled={publishing} className="btn-gold px-8 py-3.5 text-[15px] disabled:opacity-60">
+                {publishing ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-board-950/30 border-t-board-950" />
+                    Публикуем…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" /> Опубликовать вариант
+                  </>
+                )}
               </button>
             </div>
           ) : (

@@ -11,18 +11,24 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json as _json
 import os
+import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from .models import Base, ExamType, Task
+from .models import Base, ExamType, Task, User, Variant
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
@@ -303,3 +309,228 @@ async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get
         # и отправить письмо со ссылкой {FRONTEND_URL}/reset?token=…
         pass
     return {"ok": True, "message": "Если e-mail зарегистрирован, письмо отправлено"}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Авторизация (HMAC-токены, без внешних зависимостей) + варианты (API v1)
+# ══════════════════════════════════════════════════════════════════════
+
+def _sign(body: str) -> str:
+    return hmac.new(SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+def create_token(user_id: str, role: str, ttl: int = 7 * 24 * 3600) -> str:
+    payload = _json.dumps(
+        {"sub": user_id, "role": role, "exp": int(time.time()) + ttl}, separators=(",", ":")
+    )
+    body = base64.urlsafe_b64encode(payload.encode()).decode()
+    return f"{body}.{_sign(body)}"
+
+
+def decode_token(token: str) -> dict:
+    try:
+        body, sig = token.split(".", 1)
+    except ValueError:
+        raise HTTPException(401, "Некорректный токен")
+    if not hmac.compare_digest(sig, _sign(body)):
+        raise HTTPException(401, "Недействительная подпись токена")
+    try:
+        payload = _json.loads(base64.urlsafe_b64decode(body.encode()))
+    except Exception:
+        raise HTTPException(401, "Некорректный токен")
+    if payload.get("exp", 0) < time.time():
+        raise HTTPException(401, "Токен истёк")
+    return payload
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/v1/auth/login")
+async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
+    """Вход: возвращает токен и роль. Демо хранит пароль открытым текстом —
+    в проде заменить на bcrypt (passlib)."""
+    user = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+    if user is None or user.password_hash != body.password:
+        raise HTTPException(401, "Неверный e-mail или пароль")
+    return {
+        "token": create_token(str(user.id), user.role.value),
+        "role": user.role.value,
+        "nickname": user.nickname,
+    }
+
+
+async def get_current_teacher(
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Зависимость: только авторизованный преподаватель."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Требуется авторизация (Bearer-токен)")
+    payload = decode_token(authorization.split(" ", 1)[1].strip())
+    if payload.get("role") != "teacher":
+        raise HTTPException(403, "Доступно только преподавателям")
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError):
+        raise HTTPException(401, "Некорректный токен")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(401, "Пользователь не найден")
+    return user
+
+
+# ─────────────────────────── Pydantic-схемы ───────────────────────────
+
+class TaskSchema(BaseModel):
+    """Одна задача варианта. Строгая валидация LaTeX-полей, ответов и типов."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str = Field(min_length=1)
+    number: int = Field(ge=1)
+    topic: str = Field(min_length=1, max_length=120)
+    # Условие с LaTeX обязательно.
+    latex_statement: str = Field(min_length=1)
+    # Эталон для части 1; для части 2 должен быть null.
+    answer: Optional[str] = None
+    solution_latex: Optional[str] = None
+    points: int = Field(ge=0, default=1)
+    type: Literal["short_answer", "detailed_answer"]
+
+    @field_validator("answer", "solution_latex", "latex_statement")
+    @classmethod
+    def _strip_str(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip() if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def _answer_by_type(self) -> "TaskSchema":
+        if self.type == "short_answer" and not self.answer:
+            raise ValueError("для short_answer обязательно поле answer")
+        if self.type == "detailed_answer":
+            # Развёрнутый ответ проверяет преподаватель — эталон не нужен.
+            self.answer = None
+        return self
+
+
+class VariantCreateSchema(BaseModel):
+    """Входной JSON варианта (формат совпадает с фронтендом)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    variantTitle: str = Field(min_length=1, max_length=200)
+    subject: Literal["math_profile", "math_base"] = "math_profile"
+    timeLimitMinutes: int = Field(ge=1, le=600, default=235)
+    tasks: List[TaskSchema] = Field(min_length=1)
+
+    @field_validator("tasks")
+    @classmethod
+    def _unique_numbers(cls, v: List[TaskSchema]) -> List[TaskSchema]:
+        nums = [t.number for t in v]
+        if len(nums) != len(set(nums)):
+            raise ValueError("номера задач должны быть уникальны")
+        return v
+
+
+class VariantTaskOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    number: int
+    topic: str
+    latex_statement: str
+    answer: Optional[str]
+    solution_latex: Optional[str]
+    points: int
+    type: str
+
+
+class VariantOut(BaseModel):
+    """Структурированный вариант для прохождения (публичный)."""
+
+    id: str
+    variantTitle: str
+    subject: str
+    timeLimitMinutes: int
+    tasks: List[VariantTaskOut]
+    publicUrl: str
+
+
+# ─────────────────────────── помощники ───────────────────────────
+
+_SHORT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # без 0/O/1/I
+
+
+def _make_short_code(n: int = 8) -> str:
+    return "VAR-" + "".join(secrets.choice(_SHORT_ALPHABET) for _ in range(n))
+
+
+def _variant_to_out(v: Variant) -> VariantOut:
+    base = os.getenv("PUBLIC_BASE_URL", "http://localhost:5173")
+    return VariantOut(
+        id=str(v.id),
+        variantTitle=v.title,
+        subject=v.subject,
+        timeLimitMinutes=v.time_limit_minutes,
+        tasks=[VariantTaskOut(**t) for t in v.tasks_json],
+        publicUrl=f"{base}/?variant={v.short_code}",
+    )
+
+
+# ─────────────────────────── эндпоинты ───────────────────────────
+
+@app.post("/api/v1/variants/upload", status_code=201)
+async def upload_variant(
+    body: VariantCreateSchema,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Загрузка варианта. Только для авторизованных преподавателей.
+
+    Валидируется Pydantic-схемой, сохраняется в БД (задачи — в JSONB),
+    возвращает variant_id и публичную короткую ссылку.
+    """
+    # Генерируем уникальный короткий код (страхуемся от коллизий).
+    for _ in range(5):
+        code = _make_short_code()
+        exists = (await db.execute(select(Variant).where(Variant.short_code == code))).scalar_one_or_none()
+        if exists is None:
+            break
+    else:  # pragma: no cover
+        raise HTTPException(500, "Не удалось сгенерировать уникальный код")
+
+    variant = Variant(
+        short_code=code,
+        title=body.variantTitle,
+        subject=body.subject,
+        time_limit_minutes=body.timeLimitMinutes,
+        tasks_json=[t.model_dump() for t in body.tasks],
+        created_by_teacher_id=teacher.id,
+    )
+    db.add(variant)
+    await db.commit()
+    await db.refresh(variant)
+
+    return {
+        "variant_id": str(variant.id),
+        "short_code": variant.short_code,
+        "public_url": _variant_to_out(variant).publicUrl,
+    }
+
+
+@app.get("/api/v1/variants/{variant_id}", response_model=VariantOut)
+async def get_variant(variant_id: str, db: AsyncSession = Depends(get_db)):
+    """Публичное получение варианта (без авторизации).
+
+    Принимает как UUID, так и короткий код из ссылки.
+    """
+    stmt = select(Variant)
+    try:
+        stmt = stmt.where(Variant.id == uuid.UUID(variant_id))
+    except ValueError:
+        stmt = select(Variant).where(Variant.short_code == variant_id)
+    variant = (await db.execute(stmt)).scalar_one_or_none()
+    if variant is None:
+        raise HTTPException(404, "Вариант не найден")
+    return _variant_to_out(variant)
