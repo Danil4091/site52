@@ -125,9 +125,8 @@ export function RatingPage() {
           return (
             <div key={p.nick} className="flex w-20 flex-col items-center min-[400px]:w-24 sm:w-28">
               {medals[i]}
-              <div className="mt-2"><Avatar name={p.name} className="h-12 w-12 text-[13px]" /></div>
-              <p className="mt-1.5 max-w-full truncate text-[12px] font-bold text-chalk-50">{p.name}</p>
-              <p className="font-mono text-[10px] text-chalk-500">@{p.nick}</p>
+              <div className="mt-2"><Avatar name={p.nick} className="h-12 w-12 text-[13px]" /></div>
+              <p className="mt-1.5 max-w-full truncate font-mono text-[12px] font-bold text-chalk-50">@{p.nick}</p>
               <p className="mt-0.5 font-display text-lg font-bold tabular-nums text-mark-yellow">{p.score}</p>
               <div className={`mt-1 w-full rounded-t-lg border border-b-0 border-board-600/50 bg-board-800/70 ${heights[i]}`} />
             </div>
@@ -140,9 +139,9 @@ export function RatingPage() {
           {top.map((p, i) => (
             <li key={p.nick} className="card-hover flex items-center gap-3 px-4 py-3">
               <span className="w-7 text-center font-display text-[13px] font-bold tabular-nums text-chalk-500">{i + 1}</span>
-              <Avatar name={p.name} />
+              <Avatar name={p.nick} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-bold text-chalk-50">{p.name} <span className="font-mono text-[10.5px] font-semibold text-chalk-500">@{p.nick}</span></p>
+                <p className="truncate font-mono text-[13px] font-bold text-chalk-50">@{p.nick}</p>
                 <p className="text-[10.5px] text-chalk-500">{p.city} · {p.streak} дн. серия</p>
               </div>
               <span className={`flex items-center gap-0.5 text-[11px] font-bold tabular-nums ${p.delta > 0 ? "text-mark-green" : p.delta < 0 ? "text-mark-red" : "text-chalk-600"}`}>

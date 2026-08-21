@@ -80,8 +80,9 @@ export default function AuthModal({
     }
     if (name.trim().length < 2) { setError("Укажите имя — минимум 2 символа"); return; }
     const nick = nickname.trim().replace(/^@/, "").toLowerCase();
-    if (nick && !/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
-    const finalNick = nick || name.trim().split(" ")[0].toLowerCase();
+    if (!nick) { setError("Укажите ник — именно он, а не имя, будет виден в рейтинге"); return; }
+    if (!/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
+    const finalNick = nick;
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setError("Похоже, в e-mail опечатка"); return; }
     if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
     if (!consent) { setError("Необходимо согласие на обработку персональных данных и условия соглашения"); return; }
@@ -136,7 +137,8 @@ export default function AuthModal({
           {tab === "register" && (
             <>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя и фамилия" className={field} aria-label="Имя" />
-              <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ник для рейтинга — например masha_2026" className={field} aria-label="Ник" />
+              <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Ник для рейтинга (виден всем) — например masha_2026" className={field} aria-label="Ник для рейтинга" />
+              <p className="-mt-1.5 text-[10.5px] leading-snug text-chalk-500">Имя и фамилия нужны только для кабинета преподавателя — в публичном рейтинге отображается только ник.</p>
             </>
           )}
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" type="email" className={field} aria-label="E-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
