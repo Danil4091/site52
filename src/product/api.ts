@@ -30,6 +30,26 @@ export function requestPasswordReset(email: string) {
   });
 }
 
+/** Привязка ученика к преподавателю по коду (POST /api/students/bind-teacher). */
+export function bindTeacherApi(teacherCode: string, token: string) {
+  return apiFetch<{
+    ok: boolean;
+    teacher: { id: string; nickname: string; full_name: string; code: string };
+  }>("/api/students/bind-teacher", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ teacher_code: teacherCode }),
+  });
+}
+
+/** Отвязка от преподавателя (DELETE /api/students/bind-teacher). */
+export function unbindTeacherApi(token: string) {
+  return apiFetch<{ ok: boolean }>("/api/students/bind-teacher", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 /* ─────────────────────────── Варианты (API v1) ─────────────────────────── */
 
 export interface VariantUploadResult {

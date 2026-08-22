@@ -542,6 +542,8 @@ const EMPTY_FORM = {
   correct_answer: "",
   is_second_part: false,
   difficulty_level: 1,
+  criteria: "",
+  image_url: "",
   source: "",
 };
 
@@ -569,6 +571,11 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
     const ans = t.correct_answer === null || t.correct_answer === undefined ? null : String(t.correct_answer);
     if (!isSecond && !ans) return fail("для части 1 обязателен correct_answer");
     const diff = Number(t.difficulty_level ?? 1);
+    /* чертёж: валидируем формат ссылки */
+    const imgRaw = t.image_url ?? t.image_path;
+    const img = imgRaw === null || imgRaw === undefined ? undefined : String(imgRaw).trim();
+    if (img && !(img.startsWith("http://") || img.startsWith("https://") || img.startsWith("image/")))
+      return fail("image_url должен быть https://… или image/… (data-URL)");
     ok.push({
       id: `imp-${Date.now()}-${row}-${Math.random().toString(36).slice(2, 6)}`,
       exam_type: t.exam_type as "ege" | "oge",
@@ -579,6 +586,8 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
       correct_answer: ans,
       is_second_part: isSecond,
       difficulty_level: Number.isInteger(diff) && diff >= 1 && diff <= 3 ? diff : 1,
+      criteria: t.criteria ? String(t.criteria) : undefined,
+      image_url: img || undefined,
       source: t.source ? String(t.source) : undefined,
       createdAt: new Date().toISOString(),
     });
@@ -617,6 +626,9 @@ export function AdminPage() {
   const submitForm = () => {
     if (!form.condition_text.trim()) return pushToast("Заполните условие задачи");
     if (!form.is_second_part && !form.correct_answer.trim()) return pushToast("Для части 1 укажите правильный ответ");
+    const img = form.image_url.trim();
+    if (img && !(img.startsWith("http://") || img.startsWith("https://") || img.startsWith("image/")))
+      return pushToast("image_url должен быть https://… или image/… (data-URL)");
     addTask({
       exam_type: form.exam_type,
       task_number: form.task_number,
@@ -626,6 +638,8 @@ export function AdminPage() {
       correct_answer: form.is_second_part ? null : form.correct_answer.trim(),
       is_second_part: form.is_second_part,
       difficulty_level: form.difficulty_level,
+      criteria: form.criteria.trim() || undefined,
+      image_url: img || undefined,
       source: form.source.trim() || undefined,
     });
     setForm(EMPTY_FORM);
@@ -705,8 +719,21 @@ export function AdminPage() {
                 <div><label className={label}>Тема</label><input value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder="Уравнения" className={field} /></div>
                 <div><label className={label}>Условие (LaTeX: $…$ или $$…$$)</label>
                   <textarea value={form.condition_text} onChange={(e) => setForm({ ...form, condition_text: e.target.value })} rows={4} placeholder="Найдите корень уравнения $\log_2(x+3)=4$." className={field} /></div>
-                <div><label className={label}>Решение / критерии</label>
+                <div><label className={label}>Эталонное решение (LaTeX)</label>
                   <textarea value={form.solution_text} onChange={(e) => setForm({ ...form, solution_text: e.target.value })} rows={3} placeholder="$x+3=16 \Rightarrow x=13$" className={field} /></div>
+                {form.is_second_part && (
+                  <div><label className={label}>Критерии оценивания ФИПИ (часть 2)</label>
+                    <textarea value={form.criteria} onChange={(e) => setForm({ ...form, criteria: e.target.value })} rows={3} placeholder="1 балл — верный ответ в п. а; 2 балла — оба пункта; 3 балла — полное обоснованное решение" className={field} /></div>
+                )}
+                <div><label className={label}>Чертёж / график (URL или data-URL)</label>
+                  <input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://…/chertyozh.png или image/png;base64,…" className={field} />
+                  {form.image_url.trim() && (
+                    <img src={form.image_url.trim()} alt="Предпросмотр чертежа"
+                      className="mt-2 max-h-40 w-auto max-w-full rounded-lg border border-board-600/50 bg-white object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      onLoad={(e) => { (e.target as HTMLImageElement).style.display = ""; }} />
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={label}>Правильный ответ</label>
                     <input value={form.correct_answer} onChange={(e) => setForm({ ...form, correct_answer: e.target.value })} disabled={form.is_second_part} placeholder="13" className={`${field} disabled:opacity-40`} /></div>
@@ -725,8 +752,19 @@ export function AdminPage() {
                   <p className="mt-2 text-[14px] leading-relaxed text-chalk-100">
                     {form.condition_text ? <LatexText text={form.condition_text} /> : <span className="text-chalk-600">Условие появится здесь…</span>}
                   </p>
+                  {form.image_url.trim() && (
+                    <img src={form.image_url.trim()} alt="Чертёж"
+                      className="mt-3 max-h-48 w-auto max-w-full rounded-lg border border-board-600/50 bg-white object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      onLoad={(e) => { (e.target as HTMLImageElement).style.display = ""; }} />
+                  )}
                   {form.solution_text && (
                     <p className="mt-3 border-t border-board-700/60 pt-2 text-[12.5px] leading-relaxed text-chalk-400"><LatexText text={form.solution_text} /></p>
+                  )}
+                  {form.is_second_part && form.criteria.trim() && (
+                    <p className="mt-2 border-t border-board-700/60 pt-2 text-[11.5px] leading-relaxed text-mark-yellow/90">
+                      <b>Критерии:</b> <LatexText text={form.criteria} />
+                    </p>
                   )}
                 </div>
               </div>
@@ -744,8 +782,18 @@ export function AdminPage() {
               <div key={t.id} className="card card-hover flex items-start gap-3 p-4">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-mark-yellow/12 font-display text-[12.5px] font-bold text-mark-yellow">№{t.task_number}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-bold text-chalk-50">{t.topic} · часть {t.is_second_part ? 2 : 1} · сложность {t.difficulty_level}</p>
+                  <p className="flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-chalk-50">
+                    {t.topic} · часть {t.is_second_part ? 2 : 1} · сложность {t.difficulty_level}
+                    {t.is_second_part && t.criteria && <span className="rounded-full bg-mark-yellow/15 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-mark-yellow">критерии</span>}
+                    {t.image_url && <span className="rounded-full bg-mark-blue/15 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-mark-blue">чертёж</span>}
+                  </p>
                   <p className="mt-1 text-[12.5px] leading-relaxed text-chalk-300"><LatexText text={t.condition_text} /></p>
+                  {t.image_url && (
+                    <img src={t.image_url} alt={`Чертёж к №${t.task_number}`}
+                      className="mt-2 max-h-24 w-auto max-w-full rounded-md border border-board-600/50 bg-white object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      onLoad={(e) => { (e.target as HTMLImageElement).style.display = ""; }} />
+                  )}
                 </div>
                 <button onClick={() => { removeTask(t.id); pushToast("Задача удалена"); }} className="btn-ghost !border-mark-red/40 !text-mark-red shrink-0 p-2 hover:!bg-mark-red/10" aria-label="Удалить">
                   <Trash2 className="h-4 w-4" />

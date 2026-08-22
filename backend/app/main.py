@@ -111,7 +111,21 @@ class TaskIn(BaseModel):
     correct_answer: Optional[str] = Field(default=None, max_length=100)
     is_second_part: bool = False
     difficulty_level: int = Field(default=1, ge=1, le=3)
+    # Критерии ФИПИ для части 2 (разбалловка на 1/2/3 балла).
+    criteria: Optional[str] = None
+    # Чертёж/график: https://… или data-URL image/….
+    image_url: Optional[str] = Field(default=None, max_length=2000)
     source: Optional[str] = None
+
+    @field_validator("image_url")
+    @classmethod
+    def _valid_image(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if v and not (v.startswith("http://") or v.startswith("https://") or v.startswith("image/")):
+            raise ValueError("image_url должен быть https://… или image/… (data-URL)")
+        return v or None
 
 
 class TaskImportIn(BaseModel):
@@ -127,6 +141,8 @@ class TaskOut(BaseModel):
     solution_text: Optional[str]
     is_second_part: bool
     difficulty_level: int
+    criteria: Optional[str] = None
+    image_url: Optional[str] = None
 
     @classmethod
     def from_orm_(cls, t: Task) -> "TaskOut":
@@ -135,6 +151,7 @@ class TaskOut(BaseModel):
             topic=t.topic, condition_text=t.condition_text,
             solution_text=t.solution_text, is_second_part=t.is_second_part,
             difficulty_level=t.difficulty_level,
+            criteria=t.criteria, image_url=t.image_url,
         )
 
 
@@ -323,16 +340,30 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     exists = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
     if exists:
         raise HTTPException(409, "Такой e-mail уже зарегистрирован")
+
+    # Привязка к преподавателю по коду (если указан и найден).
+    teacher_id: Optional[uuid.UUID] = None
+    if body.teacher_code:
+        from .models import UserRole as _UR
+        teacher = (
+            await db.execute(
+                select(User).where(User.teacher_code == body.teacher_code.strip().upper(), User.role == _UR.TEACHER)
+            )
+        ).scalar_one_or_none()
+        if teacher is not None:
+            teacher_id = teacher.id
+
     user = User(
         email=body.email,
         password_hash=body.password,  # в проде — bcrypt: passlib.hash.bcrypt.hash(...)
         full_name=body.full_name,
         nickname=body.nickname,
         telegram_id=body.telegram_id,
+        teacher_id=teacher_id,
     )
     db.add(user)
     await db.commit()
-    return {"id": str(user.id), "nickname": user.nickname}
+    return {"id": str(user.id), "nickname": user.nickname, "teacher_id": str(teacher_id) if teacher_id else None}
 
 
 class ForgotPasswordIn(BaseModel):
@@ -424,6 +455,80 @@ async def get_current_teacher(
     if user is None:
         raise HTTPException(401, "Пользователь не найден")
     return user
+
+
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Зависимость: любой авторизованный пользователь (ученик/преподаватель)."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Требуется авторизация (Bearer-токен)")
+    payload = decode_token(authorization.split(" ", 1)[1].strip())
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError):
+        raise HTTPException(401, "Некорректный токен")
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(401, "Пользователь не найден")
+    return user
+
+
+class BindTeacherIn(BaseModel):
+    teacher_code: str = Field(min_length=1, max_length=24)
+
+
+@app.post("/api/students/bind-teacher")
+async def bind_teacher(
+    body: BindTeacherIn,
+    student: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Привязка ученика к преподавателю по коду приглашения.
+
+    Находит преподавателя по ``teacher_code`` и обновляет ``teacher_id``
+    в профиле ученика. Вся накопленная статистика ученика (попытки,
+    решения, XP, журнал ошибок) уже связана с его ``user_id``/ником,
+    поэтому после привязки она моментально становится видна в кабинете
+    репетитора (выборка идёт по ``teacher_id``). Локальные демо-данные
+    из localStorage синхронизируются на фронтенде при этом же вызове.
+    """
+    from .models import UserRole
+
+    code = body.teacher_code.strip().upper()
+    teacher = (
+        await db.execute(
+            select(User).where(User.teacher_code == code, User.role == UserRole.TEACHER)
+        )
+    ).scalar_one_or_none()
+    if teacher is None:
+        raise HTTPException(404, f"Преподаватель с кодом {code} не найден")
+    if teacher.id == student.id:
+        raise HTTPException(400, "Нельзя привязаться к самому себе")
+
+    student.teacher_id = teacher.id
+    await db.commit()
+    return {
+        "ok": True,
+        "teacher": {
+            "id": str(teacher.id),
+            "nickname": teacher.nickname,
+            "full_name": teacher.full_name,
+            "code": teacher.teacher_code,
+        },
+    }
+
+
+@app.delete("/api/students/bind-teacher")
+async def unbind_teacher(
+    student: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отвязка ученика от преподавателя (смена кода = отвязка + новая привязка)."""
+    student.teacher_id = None
+    await db.commit()
+    return {"ok": True}
 
 
 # ─────────────────────────── Pydantic-схемы ───────────────────────────

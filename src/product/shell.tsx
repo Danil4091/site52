@@ -139,7 +139,9 @@ export function Header() {
 
           {user ? (
             <>
-              <span className="hidden items-center gap-2.5 rounded-full border border-board-600/70 bg-board-800/60 py-1 pl-1 pr-3.5 sm:flex">
+              <button onClick={() => go("profile")}
+                className={`hidden items-center gap-2.5 rounded-full border py-1 pl-1 pr-3.5 transition-colors duration-200 sm:flex ${route === "profile" ? "border-mark-yellow/60 bg-board-700" : "border-board-600/70 bg-board-800/60 hover:border-board-600"}`}
+                aria-label="Настройки профиля" title="Настройки профиля">
                 <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${user.role === "teacher" ? "bg-mark-yellow text-board-950" : "bg-board-600 text-chalk-50"}`}>
                   {user.nickname.slice(0, 2).toUpperCase()}
                 </span>
@@ -149,7 +151,7 @@ export function Header() {
                     {user.role === "teacher" ? "преподаватель · " : ""}LVL {levelFromXp(streak.xp)} · {titleForLevel(levelFromXp(streak.xp)).title}
                   </span>
                 </span>
-              </span>
+              </button>
               {user.role === "teacher" && (
                 <button onClick={() => go("admin")}
                   className={`flex h-9 w-9 items-center justify-center rounded-lg border transition-colors duration-200 ${route === "admin" ? "border-mark-yellow/60 bg-board-700 text-mark-yellow" : "border-board-600/70 bg-board-800/60 text-chalk-400 hover:text-chalk-50"}`}

@@ -100,6 +100,10 @@ class Task(Base):
     correct_answer: Mapped[Optional[str]] = mapped_column(String(100))         # NULL для части 2
     is_second_part: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     difficulty_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Критерии оценивания ФИПИ (для части 2): разбалловка на 1/2/3 балла.
+    criteria: Mapped[Optional[str]] = mapped_column(Text)
+    # Чертёж/график к условию: URL (https://…) или data-URL (image/…).
+    image_url: Mapped[Optional[str]] = mapped_column(String(2000))
     source: Mapped[Optional[str]] = mapped_column(String(255))
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

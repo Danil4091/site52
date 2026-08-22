@@ -94,7 +94,9 @@ function buildPool(number: number, extra?: CustomTask[]): FeedTask[] {
     .filter((t) => t.exam_type === "ege" && t.task_number === number && !t.is_second_part && t.correct_answer)
     .map((t) => ({
       id: t.id, number: t.task_number, topic: t.topic,
-      statement: t.condition_text, answer: t.correct_answer as string, solution: t.solution_text,
+      statement: t.condition_text, answer: t.correct_answer as string,
+      solution: t.solution_text ?? t.criteria,
+      imageUrls: t.image_url ? [t.image_url] : undefined,
     }));
   const demo: Row[] = number === 4 ? SIMPLE_PROB : number === 5 ? COMPLEX_PROB : [];
   const fromDemo: FeedTask[] = demo.map(([text, answer, explain], i) => ({

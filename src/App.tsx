@@ -19,6 +19,7 @@ const PublishedVariantRunner = lazy(() => import("./product/PublishedVariantRunn
 const MarathonPage = lazy(() => import("./product/MarathonPage"));
 const TeacherDashboard = lazy(() => import("./product/TeacherDashboard"));
 const AssignmentRunner = lazy(() => import("./product/AssignmentRunner"));
+const ProfileSettings = lazy(() => import("./product/ProfileSettings"));
 
 /** Фирменная заглушка на время подгрузки раздела. */
 function BoardLoader() {
@@ -90,6 +91,7 @@ export default function App() {
             {route === "mistakes" && <MistakesPage />}
             {route === "admin" && <AdminPage />}
             {route === "achieve" && <RatingPage />}
+            {route === "profile" && <ProfileSettings />}
           </Suspense>
         </main>
 

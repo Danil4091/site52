@@ -51,7 +51,7 @@ export function readReferrals(code: string): string[] {
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
   | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
-  | "variant-run" | "marathon" | "assignment-run";
+  | "variant-run" | "marathon" | "assignment-run" | "profile";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system" | "homework"; title: string; body: string; time: string; read: boolean; assignmentId?: string; }
@@ -68,6 +68,10 @@ export interface CustomTask {
   correct_answer?: string | null;
   is_second_part: boolean;
   difficulty_level: number;
+  /** Критерии оценивания ФИПИ (часть 2, разбалловка 1/2/3). */
+  criteria?: string;
+  /** Чертёж/график: https://… или data-URL image/… */
+  image_url?: string;
   source?: string;
   createdAt: string;
 }
@@ -169,6 +173,8 @@ interface AppState {
   login: (u: ProductUser) => void;
   logout: () => void;
   patchUser: (p: Partial<ProductUser>) => void;
+  bindTeacherLocal: (code: string) => { ok: boolean; teacherName?: string };
+  unbindTeacherLocal: () => void;
   pushToast: (msg: string) => void;
   addNotif: (n: Omit<NotifItem, "id" | "time" | "read">) => void;
   markAllRead: () => void;
@@ -451,6 +457,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * Привязка ученика к преподавателю по коду (локальный режим).
+   * Обновляет и сессию, и запись в общем списке пользователей —
+   * именно по teacherCode кабинет репетитора находит своих учеников,
+   * поэтому вся накопленная статистика (ключуется по нику) становится
+   * ему видна моментально, без переноса данных.
+   */
+  const bindTeacherLocal = useCallback((code: string): { ok: boolean; teacherName?: string } => {
+    const c = code.trim().toUpperCase();
+    try {
+      const users = read<{ nickname: string; role: string; teacherCode?: string; password?: string }[]>("komi-users-v1", []);
+      const teacher = users.find((u) => u.role === "teacher" && (u.teacherCode || "").toUpperCase() === c);
+      if (!teacher) return { ok: false };
+      const teacherName = teacher.nickname;
+      /* обновляем запись ученика в общем списке */
+      const me = user?.nickname;
+      if (me) {
+        const next = users.map((u) =>
+          u.nickname === me && u.role === "student" ? { ...u, teacherCode: c } : u
+        );
+        write("komi-users-v1", next);
+      }
+      /* обновляем сессию */
+      setUser((prev) => {
+        if (!prev) return prev;
+        const merged = { ...prev, teacherCode: c, teacherName };
+        saveSession(merged);
+        return merged;
+      });
+      return { ok: true, teacherName };
+    } catch {
+      return { ok: false };
+    }
+  }, [user?.nickname]);
+
+  const unbindTeacherLocal = useCallback((): void => {
+    try {
+      const users = read<{ nickname: string; role: string; teacherCode?: string }[]>("komi-users-v1", []);
+      const me = user?.nickname;
+      if (me) {
+        const next = users.map((u) =>
+          u.nickname === me && u.role === "student" ? { ...u, teacherCode: undefined } : u
+        );
+        write("komi-users-v1", next);
+      }
+      setUser((prev) => {
+        if (!prev) return prev;
+        const merged = { ...prev, teacherCode: undefined, teacherName: undefined };
+        saveSession(merged);
+        return merged;
+      });
+    } catch { /* ок */ }
+  }, [user?.nickname]);
+
   const startVariant = useCallback((id: string) => {
     setVariantId(id);
     setRoute("run");
@@ -731,7 +791,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     marathonCount, marathonBest, referrals, tagsAssigned, tagStats, recordMarathon, assignTag, buyFreeze, freezesBought,
     inviteCode: user ? makeInviteCode(user.nickname) : "",
     activeAssignmentId, openAssignment, completeAssignment,
-    go, login, logout, patchUser, pushToast, addNotif,
+    go, login, logout, patchUser, pushToast, addNotif, bindTeacherLocal, unbindTeacherLocal,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,
     addTask, removeTask, importTasks,
