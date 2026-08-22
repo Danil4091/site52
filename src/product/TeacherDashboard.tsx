@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useApp } from "./store";
 import { BANK, REAL_VARIANT } from "./data";
+import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_TEACHER_CODE } from "./config";
 import { Avatar, LatexText } from "./ui";
 import {
   ensureDemoStudents, groupReport, linkedStudentNicks, readStudentStats, studentInsights, timeAgo,
@@ -111,7 +112,7 @@ export default function TeacherDashboard() {
   /* при первом открытии — демо-ученики (локальный режим) */
   useEffect(() => { ensureDemoStudents(); }, []);
 
-  const code = user?.teacherCode || "ARTEM-PRO";
+  const code = user?.teacherCode || ADMIN_TEACHER_CODE;
   const students = useMemo(() => {
     const linked = linkedStudentNicks(code);
     return linked.map((l) => ({ ...readStudentStats(l.nick), goal: l.goal, registeredAt: l.registeredAt }));
@@ -289,7 +290,7 @@ export function AssignmentsPanel() {
     return () => clearInterval(id);
   }, []);
 
-  const code = user?.teacherCode || "ARTEM-PRO";
+  const code = user?.teacherCode || ADMIN_TEACHER_CODE;
   const students = useMemo(() => linkedStudentNicks(code), [code, tick]);
   const list = useMemo(() => readAssignments(), [tick]);
 
@@ -467,8 +468,8 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
         ? `Свой набор · ${picked.length} задач(и)`
         : `Блок задач · №${topicNumber} ${BANK.find((b) => b.number === topicNumber)?.topic ?? ""} (${taskCount} шт)`;
     createAssignment({
-      fromNick: user?.nickname ?? "teacher",
-      fromName: user?.name ?? "Артём",
+      fromNick: user?.nickname ?? ADMIN_NICKNAME,
+      fromName: user?.name ?? ADMIN_DISPLAY_NAME,
       title, kind,
       variantId: kind === "variant" ? variantId : undefined,
       topicNumber: kind === "block" ? topicNumber : undefined,
@@ -606,7 +607,7 @@ export function TeacherReportPanel() {
     return () => clearInterval(id);
   }, []);
 
-  const code = user?.teacherCode || "ARTEM-PRO";
+  const code = user?.teacherCode || ADMIN_TEACHER_CODE;
   const students = useMemo(() => linkedStudentNicks(code), [code, tick]);
   const stats = useMemo(() => students.map((s) => readStudentStats(s.nick)), [students, tick]);
   const report = useMemo(() => groupReport(stats), [stats]);

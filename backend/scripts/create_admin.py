@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Создание мастер-аккаунта преподавателя (Артём).
+"""Создание мастер-аккаунта преподавателя (Даниил Андреевич Пудов).
 
 Читает из окружения (.env):
-  ADMIN_USERNAME     — логин/ник преподавателя   (по умолчанию: artem)
-  ADMIN_PASSWORD     — пароль                     (по умолчанию: artem-2026)
-  ADMIN_TEACHER_CODE — код привязки для учеников  (по умолчанию: ARTEM-PRO)
+  ADMIN_USERNAME     — логин/ник преподавателя   (по умолчанию: daniil)
+  ADMIN_PASSWORD     — пароль                     (по умолчанию: Pudov-Ege-2026)
+  ADMIN_TEACHER_CODE — код привязки для учеников  (по умолчанию: PUDOV-PRO)
 
 Скрипт идемпотентен: если аккаунт уже есть — ничего не меняет.
 
@@ -41,9 +41,10 @@ def _hash(password: str) -> str:
 
 
 def main() -> None:
-    username = os.getenv("ADMIN_USERNAME", "artem")
-    password = os.getenv("ADMIN_PASSWORD", "artem-2026")
-    teacher_code = os.getenv("ADMIN_TEACHER_CODE", "ARTEM-PRO")
+    username = os.getenv("ADMIN_USERNAME", "daniil")
+    password = os.getenv("ADMIN_PASSWORD", "Pudov-Ege-2026")
+    teacher_code = os.getenv("ADMIN_TEACHER_CODE", "PUDOV-PRO")
+    full_name = os.getenv("ADMIN_FULL_NAME", "Даниил Андреевич Пудов")
 
     engine = create_engine(SYNC_URL)
     with Session(engine) as db:
@@ -52,15 +53,16 @@ def main() -> None:
             # гарантируем, что у существующего аккаунта правильные роль и код
             existing.role = UserRole.TEACHER
             existing.teacher_code = teacher_code
+            existing.full_name = full_name
             db.commit()
-            print(f"[create_admin] аккаунт '{username}' уже существует — роль и код обновлены.")
+            print(f"[create_admin] аккаунт '{username}' уже существует — роль, имя и код обновлены.")
             return
 
         admin = User(
             id=uuid.uuid4(),
             email=f"{username}@repetitor.local",
             password_hash=_hash(password),
-            full_name="Артём",
+            full_name=full_name,
             nickname=username,
             role=UserRole.TEACHER,
             teacher_code=teacher_code,

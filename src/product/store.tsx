@@ -211,7 +211,7 @@ const PUBLISHED_KEY = "komi-published-variants-v1";
    стартует чистым вместо падения. Поднимайте VERSION при изменении
    любых персист-структур. */
 const STATE_VERSION_KEY = "komi-state-version";
-const STATE_VERSION = "2026-02-v3";
+const STATE_VERSION = "2026-02-v4"; // v4: смена мастер-аккаунта (daniil / PUDOV-PRO)
 
 function ensureStateVersion() {
   try {

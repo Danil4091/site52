@@ -37,7 +37,8 @@ export const TUTOR_PHOTO_URL: string =
    В продакшене преподавателя создаёт backend/scripts/create_admin.py
    из серверного .env. Здесь — зеркало для автономного режима, чтобы
    преподаватель мог войти через обычную форму (без демо-кнопок). */
-export const ADMIN_NICKNAME: string = env.VITE_ADMIN_NICKNAME ?? "artem";
-export const ADMIN_PASSWORD: string = env.VITE_ADMIN_PASSWORD ?? "artem-2026";
-export const ADMIN_TEACHER_CODE: string = env.VITE_ADMIN_TEACHER_CODE ?? "ARTEM-PRO";
-export const ADMIN_DISPLAY_NAME = "Артём";
+export const ADMIN_NICKNAME: string = env.VITE_ADMIN_NICKNAME ?? "daniil";
+export const ADMIN_PASSWORD: string = env.VITE_ADMIN_PASSWORD ?? "Pudov-Ege-2026";
+export const ADMIN_TEACHER_CODE: string = env.VITE_ADMIN_TEACHER_CODE ?? "PUDOV-PRO";
+export const ADMIN_DISPLAY_NAME = "Даниил Пудов";
+export const ADMIN_FULL_NAME = "Даниил Андреевич Пудов";

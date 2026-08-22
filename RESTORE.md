@@ -51,7 +51,7 @@ mark-green #5ee6a8 (успех)
 | `product/VariantUploader.tsx` | Drag&drop JSON варианта → валидация (variantTitle/tasks/number/latex_statement/answer, типы short_answer/detailed_answer) → KaTeX-превью → «Опубликовать» → ссылка `?variant=VAR-XXXXXXXX`; фолбэк: сервер → localStorage |
 | `product/PublishedVariantRunner.tsx` | Запуск авторского варианта по ссылке **без логина** (автономно) |
 | `product/Part2Task.tsx` | Часть 2: без учителя — плашка «автопроверка только с преподавателем» + «Ввести код»; с учителем — «Автопроверка ИИ/отправить» (симуляция 900 мс) + «Эталонное решение» |
-| `product/AttachTeacherModal.tsx` | Привязка по коду (ARTEM-PRO / KOMI-XXXXXX) |
+| `product/AttachTeacherModal.tsx` | Привязка по коду (PUDOV-PRO / KOMI-XXXXXX) |
 | `product/AuthModal.tsx` | Чистая регистрация: ник (обяз., 3–16, уникален), пароль+подтверждение, «Код преподавателя» (опц.), слайдер цели 40–100, чекбокс ПДн (обязат.); вход ник+пароль; автореф `?ref=`; мастер-аккаунт сидится из config |
 | `product/LegalDocs.tsx` | Политика ПДн (152-ФЗ) + Оферта самозанятого (плейсхолдеры ФИО/ИНН), 6+ |
 | `product/ForgotPassword.tsx`, `NotificationsBell.tsx`, `VkContactWidget.tsx` | восстановление пароля; колокольчик; ВК-виджет (sticky на десктопе, плашка+крестик на мобильных, фото `VITE_TUTOR_PHOTO_URL`, кнопка `VITE_VK_GROUP_URL`) |
@@ -72,15 +72,15 @@ mark-green #5ee6a8 (успех)
 
 ## 5. Доступы (демо)
 
-- Преподаватель: **ник `artem`, пароль `artem-2026`**, код ученикам **`ARTEM-PRO`**.
-- Кабинет: вход под artem (авто-переход) или `?panel=komi2026`.
+- Преподаватель: **ник `daniil`, пароль `Pudov-Ege-2026`**, код ученикам **`PUDOV-PRO`**.
+- Кабинет: вход под daniil (авто-переход) или `?panel=komi2026`.
 - Ответы части 1 реального варианта: 1→0.6, 2→11, 3→5, 4→0.94, 5→0.56, 6→13, 7→8, 8→2, 9→6, 10→3, 11→3, 12→0. Чертежи: №1 (треугольник) и №8 (касательная) — imageUrls (qwenlm CDN).
 
 ## 6. Переменные окружения
 
 Фронт (`.env.example`): `VITE_API_URL`, `VITE_EGE_DATE=2027-06-07`, `VITE_RU_AVG_SCORE=64`,
-`VITE_VK_GROUP_URL`, `VITE_TUTOR_PHOTO_URL`, `VITE_ADMIN_NICKNAME=artem`,
-`VITE_ADMIN_PASSWORD=artem-2026`, `VITE_ADMIN_TEACHER_CODE=ARTEM-PRO`.
+`VITE_VK_GROUP_URL`, `VITE_TUTOR_PHOTO_URL`, `VITE_ADMIN_NICKNAME=daniil`,
+`VITE_ADMIN_PASSWORD=Pudov-Ege-2026`, `VITE_ADMIN_TEACHER_CODE=PUDOV-PRO`.
 Бэк (`backend/.env.example`): `DATABASE_URL`, `HMAC_SECRET` (alias `SECRET_KEY`),
 `CORS_ORIGINS`, `ADMIN_USERNAME/PASSWORD/TEACHER_CODE`, `PUBLIC_BASE_URL`.
 

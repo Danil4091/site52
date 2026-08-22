@@ -49,7 +49,7 @@ cp .env.example .env                               # и заполните
 uvicorn app.main:app --reload                      # http://localhost:8000/docs
 ```
 
-Мастер-аккаунт преподавателя создаётся автоматически: **artem / artem-2026**.
+Мастер-аккаунт преподавателя создаётся автоматически: **daniil / Pudov-Ege-2026** (код ученикам `PUDOV-PRO`).
 
 ## Структура
 

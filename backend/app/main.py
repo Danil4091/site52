@@ -45,9 +45,10 @@ SECRET_KEY = HMAC_SECRET
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "artem")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "artem-2026")
-ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "ARTEM-PRO")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "daniil")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Pudov-Ege-2026")
+ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "PUDOV-PRO")
+ADMIN_FULL_NAME = os.getenv("ADMIN_FULL_NAME", "Даниил Андреевич Пудов")
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -59,7 +60,7 @@ async def get_db():
 
 
 async def ensure_admin() -> None:
-    """Автоматически гарантирует наличие мастер-аккаунта преподавателя (Артём).
+    """Автоматически гарантирует наличие мастер-аккаунта преподавателя.
 
     Вызывается при старте. Идемпотентна: существующий аккаунт не пересоздаётся,
     но роль и код привязки поддерживаются в актуальном состоянии.
@@ -73,6 +74,7 @@ async def ensure_admin() -> None:
         if existing is not None:
             existing.role = UserRole.TEACHER
             existing.teacher_code = ADMIN_TEACHER_CODE
+            existing.full_name = ADMIN_FULL_NAME
             # Миграция: если мастер-аккаунт ещё на plaintext-пароле — хешируем.
             if needs_rehash(existing.password_hash) and existing.password_hash == ADMIN_PASSWORD:
                 existing.password_hash = hash_password(ADMIN_PASSWORD)
@@ -82,7 +84,7 @@ async def ensure_admin() -> None:
             User(
                 email=f"{ADMIN_USERNAME}@repetitor.local",
                 password_hash=hash_password(ADMIN_PASSWORD),  # bcrypt
-                full_name="Артём",
+                full_name=ADMIN_FULL_NAME,
                 nickname=ADMIN_USERNAME,
                 role=UserRole.TEACHER,
                 teacher_code=ADMIN_TEACHER_CODE,

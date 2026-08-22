@@ -7,7 +7,7 @@
    ══════════════════════════════════════════════════════════════════ */
 import type { AttemptRecord } from "./data";
 import type { TopicStat } from "./store";
-import { ADMIN_TEACHER_CODE } from "./config";
+import { ADMIN_DISPLAY_NAME, ADMIN_TEACHER_CODE } from "./config";
 
 /** Одна запись активности ученика (что решал и когда). */
 export interface ActivityEntry {
@@ -109,7 +109,7 @@ export function ensureDemoStudents(): void {
       if (!users.some((u) => u.nickname === def.nick)) {
         users.push({
           nickname: def.nick, role: "student", password: "demo-" + def.nick,
-          goal: def.goal, teacherCode: ADMIN_TEACHER_CODE, teacherName: "Артём",
+          goal: def.goal, teacherCode: ADMIN_TEACHER_CODE, teacherName: ADMIN_DISPLAY_NAME,
           referredBy: undefined, consentVersion: "1.0", consentAt: new Date(registeredAt).toISOString(),
           registeredAt, isDemo: true,
         });

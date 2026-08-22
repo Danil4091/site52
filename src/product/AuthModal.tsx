@@ -75,7 +75,7 @@ export default function AuthModal({
   /* при первом открытии — гарантируем мастер-аккаунт преподавателя */
   useEffect(() => { seedAdminIfNeeded(); }, []);
 
-  /* автоподхват реферального кода преподавателя из URL: ?ref=ARTEM-PRO */
+  /* автоподхват реферального кода преподавателя из URL: ?ref=PUDOV-PRO */
   useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (ref && ref.trim()) {

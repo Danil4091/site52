@@ -5,6 +5,8 @@
    points, type }].
    ══════════════════════════════════════════════════════════════════ */
 
+import { ADMIN_DISPLAY_NAME, ADMIN_TEACHER_CODE } from "./config";
+
 export type TaskType = "short_answer" | "detailed_answer";
 
 /** Одна задача варианта (как лежит в JSON и в состоянии). */
@@ -153,18 +155,18 @@ export function variantLink(code: string): string {
 
 /* ─────────────────── образцы кодов преподавателей ─────────────────── */
 
-/** code → имя преподавателя. Преподаватель может добавить свои коды. */
+/** code → имя преподавателя. Основной код берётся из config (.env). */
 export const TEACHER_CODES: Record<string, string> = {
-  "ARTEM-PRO": "Артём",
-  "KOMI-2026": "Артём",
-  "PROBNIK-7": "Артём",
+  [ADMIN_TEACHER_CODE]: ADMIN_DISPLAY_NAME,
+  "KOMI-2026": ADMIN_DISPLAY_NAME,
+  "PROBNIK-7": ADMIN_DISPLAY_NAME,
 };
 
 export function resolveTeacher(code: string): string | null {
   const c = code.trim().toUpperCase();
   if (TEACHER_CODES[c]) return TEACHER_CODES[c];
-  /* любые коды формата KOMI-… / ARTEM-… считаем кодами основного преподавателя */
-  if (/^(KOMI|ARTEM)-[A-Z0-9]{3,8}$/.test(c)) return "Артём";
+  /* любые коды формата KOMI-… / PUDOV-… считаем кодами основного преподавателя */
+  if (/^(KOMI|PUDOV)-[A-Z0-9]{3,8}$/.test(c)) return ADMIN_DISPLAY_NAME;
   return null;
 }
 
