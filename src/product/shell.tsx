@@ -9,12 +9,13 @@ import { NotificationsBell } from "./NotificationsBell";
 import { levelFromXp } from "./ui";
 import { titleForLevel } from "./data";
 
+/* Десктопная навигация: 7 вкладок — чтобы логотип «Репетитор из Коми»
+   не вытеснялся. Тренажёр вероятностей доступен из «Банка заданий». */
 const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", short: "Главная", icon: Home },
   { key: "bank", label: "Банк заданий", short: "Банк", icon: Library },
   { key: "variants", label: "Варианты", short: "Варианты", icon: ClipboardList },
   { key: "materials", label: "Теория", short: "Теория", icon: BookOpenText },
-  { key: "probability", label: "Вероятность", short: "Вероят.", icon: Flame },
   { key: "mistakes", label: "Ошибки", short: "Ошибки", icon: Eraser },
   { key: "rating", label: "Рейтинг", short: "Рейтинг", icon: Trophy },
   { key: "analytics", label: "Аналитика", short: "Аналитика", icon: BarChart3 },
@@ -183,7 +184,7 @@ export function MobileNav() {
   const activeNav: Route = route === "run" ? "variants" : route === "results" ? "analytics" : route;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-board-700/70 bg-board-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Мобильная навигация">
-      <div className="grid grid-cols-5">
+      <div className={`grid ${items.length >= 6 ? "grid-cols-6" : "grid-cols-5"}`}>
         {items.map((n) => {
           const Icon = n.icon;
           const active = activeNav === n.key;

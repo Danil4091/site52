@@ -14,6 +14,7 @@ import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
 import { ADMIN_NICKNAME, RU_AVG_SCORE_2026 } from "./config";
 import TeacherDashboard, { AssignmentsPanel, TeacherReportPanel } from "./TeacherDashboard";
+import MaterialsAdmin from "./MaterialsAdmin";
 
 /* Статистика всего сайта — отдельный ленивый чанк (recharts внутри). */
 const SiteStatsPanel = lazy(() => import("./SiteStatsPanel"));
@@ -595,7 +596,7 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
 export function AdminPage() {
   const { user, taskBank, addTask, removeTask, importTasks, pushToast, publishedVariants, unpublishVariant, runPublishedVariant } = useApp();
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("komi-admin") === "1");
-  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students" | "hw" | "report" | "site">("students");
+  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students" | "hw" | "report" | "site" | "materials">("students");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [importText, setImportText] = useState("");
@@ -692,7 +693,7 @@ export function AdminPage() {
       </h1>
 
       <div className="rise rise-2 mt-6 flex flex-wrap gap-1.5">
-        {([...(isOwner ? [["site", "🌐 Сайт"]] : []), ["students", "Ученики"], ["report", "Отчёт"], ["hw", "Домашние задания"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw" | "report" | "site", string][]).map(([k, l]) => (
+        {([...(isOwner ? [["site", "🌐 Сайт"]] : []), ["students", "Ученики"], ["report", "Отчёт"], ["hw", "Домашние задания"], ["materials", "📚 Теория"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw" | "report" | "site" | "materials", string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`inline-flex min-h-[44px] items-center rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {l}
@@ -893,6 +894,12 @@ export function AdminPage() {
           <Suspense fallback={<div className="py-16 text-center text-[12px] font-mono uppercase tracking-widest text-chalk-500">Собираем статистику…</div>}>
             <SiteStatsPanel />
           </Suspense>
+        </div>
+      )}
+
+      {tab === "materials" && (
+        <div className="mt-5">
+          <MaterialsAdmin />
         </div>
       )}
 
