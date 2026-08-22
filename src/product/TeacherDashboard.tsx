@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ClipboardList,
-  Copy, Flame, GraduationCap, Send, Sparkles, Target, Trash2, Users, XCircle,
+  AlertTriangle, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ClipboardList,
+  Clock, Copy, Flame, GraduationCap, PenLine, Send, Sparkles, Target, Trash2, TrendingUp, Users, XCircle,
 } from "lucide-react";
 import { useApp } from "./store";
 import { BANK, REAL_VARIANT } from "./data";
 import { Avatar, LatexText } from "./ui";
 import {
-  ensureDemoStudents, linkedStudentNicks, readStudentStats, timeAgo,
+  ensureDemoStudents, groupReport, linkedStudentNicks, readStudentStats, studentInsights, timeAgo,
   type ActivityEntry, type StudentStats,
 } from "./teacherData";
 import {
-  createAssignment, deleteAssignment, readAssignments,
+  createAssignment, deadlineMeta, deleteAssignment, gradeSolution, readAssignments,
   type Assignment, type AssignmentKind, type PickedTask,
 } from "./assignments";
 
@@ -241,20 +241,37 @@ export function AssignmentsPanel() {
   const { user, pushToast } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [tick, setTick] = useState(0);
+  const [expandedSolution, setExpandedSolution] = useState<string | null>(null); // `${hwId}:${nick}`
+  const [grades, setGrades] = useState<Record<string, string>>({}); // черновики оценок
 
   useEffect(() => { ensureDemoStudents(); }, []);
+  /* тикаем раз в 30 с, чтобы дедлайны и «просрочено» обновлялись сами */
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const code = user?.teacherCode || "ARTEM-PRO";
   const students = useMemo(() => linkedStudentNicks(code), [code, tick]);
   const list = useMemo(() => readAssignments(), [tick]);
 
   const remove = (id: string) => { deleteAssignment(id); setTick((t) => t + 1); pushToast("ДЗ удалено"); };
 
+  const grade = (hwId: string, nick: string) => {
+    const raw = grades[`${hwId}:${nick}`];
+    const val = raw === undefined ? NaN : Number(raw.replace(",", "."));
+    if (!Number.isFinite(val) || val < 0) { pushToast("Введите оценку числом (например, 2)"); return; }
+    gradeSolution(hwId, nick, val);
+    setTick((t) => t + 1);
+    pushToast(`Оценка ${val} выставлена — @${nick}`);
+  };
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-display text-lg font-bold text-chalk-50">Домашние задания</h2>
-          <p className="text-[11.5px] text-chalk-500">отправьте вариант или блок задач — ученики получат уведомление</p>
+          <p className="text-[11.5px] text-chalk-500">вариант, блок задач или свой набор · дедлайны и ручная проверка части 2</p>
         </div>
         <button onClick={() => setShowNew(true)} className="btn-gold px-4 py-2 text-[12.5px]"><Send className="h-4 w-4" />Отправить ДЗ</button>
       </div>
@@ -268,9 +285,11 @@ export function AssignmentsPanel() {
           </div>
         )}
         {list.map((a) => {
-          const done = a.targets.filter((t) => t.status === "done").length;
+          const meta = deadlineMeta(a);
+          const maxPart2 = (a.pickedTasks ?? []).filter((t) => t.part === 2).reduce((s, t) => s + (t.maxScore ?? 2), 0);
+          const hasSubmitted = a.targets.some((t) => t.status === "submitted");
           return (
-            <div key={a.id} className="card p-4">
+            <div key={a.id} className={`card p-4 ${meta.overdue ? "!border-mark-red/40" : ""}`}>
               <div className="flex flex-wrap items-center gap-3">
                 <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${a.kind === "variant" ? "bg-mark-blue/15 text-mark-blue" : a.kind === "custom" ? "bg-mark-yellow/15 text-mark-yellow" : "bg-mark-green/15 text-mark-green"}`}>
                   {a.kind === "variant" ? <ClipboardList className="h-5 w-5" /> : a.kind === "custom" ? <Sparkles className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
@@ -279,19 +298,80 @@ export function AssignmentsPanel() {
                   <p className="truncate text-[14px] font-bold text-chalk-50">{a.title}</p>
                   <p className="text-[11px] text-chalk-500">
                     {a.kind === "variant" ? "Вариант" : a.kind === "custom" ? `Свой набор · ${a.pickedTasks?.length ?? 0} задач(и)` : `Блок · №${a.topicNumber} · ${a.taskCount} задач`}
-                    {a.deadline ? ` · до ${new Date(a.deadline).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}` : ""}
+                    {maxPart2 > 0 && <span className="text-mark-pink"> · ч.2 на {maxPart2} б. (ручная проверка)</span>}
                   </p>
                 </div>
-                <span className="chip"><CheckCircle2 className="h-3.5 w-3.5 text-mark-green" />{done}/{a.targets.length} выполнили</span>
+                {/* дедлайн */}
+                {a.deadline && (
+                  <span className={`chip !text-[10.5px] ${meta.overdue ? "!border-mark-red/60 !text-mark-red" : meta.msLeft < 86_400_000 ? "!border-mark-yellow/60 !text-mark-yellow" : ""}`}>
+                    <Clock className="h-3.5 w-3.5" />
+                    {meta.overdue ? "просрочено" : `до ${new Date(a.deadline).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} · ${meta.humanLeft}`}
+                  </span>
+                )}
+                <span className="chip"><CheckCircle2 className="h-3.5 w-3.5 text-mark-green" />{meta.doneCount}/{a.targets.length} выполнили</span>
                 <button onClick={() => remove(a.id)} className="btn-ghost !px-2.5 !py-2 !text-mark-red"><Trash2 className="h-4 w-4" /></button>
               </div>
+
+              {/* прогресс выполнения к дедлайну */}
+              {a.deadline && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-[10.5px] font-semibold text-chalk-500">
+                    <span>выполнение к дедлайну</span>
+                    <span className="tabular-nums">{meta.progressPct}%{meta.submittedCount > 0 && ` · ${meta.submittedCount} ждут проверки`}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-board-700/60">
+                    <div className={`h-full rounded-full transition-all duration-500 ${meta.overdue && meta.progressPct < 100 ? "bg-mark-red" : "bg-mark-green"}`} style={{ width: `${meta.progressPct}%` }} />
+                  </div>
+                </div>
+              )}
+
               <div className="mt-3 flex flex-wrap gap-2">
                 {a.targets.map((t) => (
-                  <span key={t.nick} className={`chip !text-[10.5px] ${t.status === "done" ? "!border-mark-green/50 !text-mark-green" : t.status === "opened" ? "!border-mark-yellow/50 !text-mark-yellow" : ""}`}>
-                    @{t.nick}{t.status === "done" && t.score !== undefined ? ` · ${t.score}` : t.status === "done" ? " · ✓" : t.status === "opened" ? " · решает" : " · новое"}
+                  <span key={t.nick} className={`chip !text-[10.5px] ${t.status === "done" ? "!border-mark-green/50 !text-mark-green" : t.status === "opened" ? "!border-mark-yellow/50 !text-mark-yellow" : t.status === "expired" ? "!border-mark-red/50 !text-mark-red" : t.status === "submitted" ? "!border-mark-pink/50 !text-mark-pink" : ""}`}>
+                    @{t.nick}
+                    {t.status === "done" && t.manualScore !== undefined ? ` · ч.2: ${t.manualScore} б.` : t.status === "done" && t.score !== undefined ? ` · ${t.score}` : t.status === "done" ? " · ✓" : t.status === "opened" ? " · решает" : t.status === "expired" ? " · просрочено" : t.status === "submitted" ? " · сдал ч.2" : " · новое"}
                   </span>
                 ))}
               </div>
+
+              {/* ручная проверка части 2: решения, сданные учениками */}
+              {hasSubmitted && (
+                <div className="mt-3 rounded-lg border border-mark-pink/30 bg-mark-pink/5 p-3">
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-mark-pink"><PenLine className="h-3.5 w-3.5" />Решения части 2 — ждут вашей проверки</p>
+                  <div className="mt-2 space-y-2">
+                    {a.targets.filter((t) => t.status === "submitted").map((t) => {
+                      const key = `${a.id}:${t.nick}`;
+                      const open = expandedSolution === key;
+                      return (
+                        <div key={t.nick} className="rounded-lg border border-board-600/50 bg-board-950/40 p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-[12px] font-bold text-chalk-50">@{t.nick}</span>
+                            {t.submittedAt && <span className="text-[10.5px] text-chalk-500">сдал(а) {timeAgo(t.submittedAt)}</span>}
+                            <button onClick={() => setExpandedSolution(open ? null : key)} className="btn-ghost ml-auto !px-2.5 !py-1.5 !text-[11px]">
+                              {open ? "Свернуть" : "Открыть решение"}
+                            </button>
+                          </div>
+                          {open && (
+                            <>
+                              <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-board-950/70 p-3 font-mono text-[12px] leading-relaxed text-chalk-200">{t.solution || "(пусто)"}</pre>
+                              <div className="mt-2 flex items-center gap-2">
+                                <input
+                                  value={grades[key] ?? ""}
+                                  onChange={(e) => setGrades((g) => ({ ...g, [key]: e.target.value }))}
+                                  placeholder={`Оценка (0–${maxPart2 || 2})`}
+                                  inputMode="decimal"
+                                  className="w-32 rounded-lg border border-board-600/70 bg-board-950/50 px-3 py-1.5 font-mono text-[12.5px] text-chalk-50 outline-none focus:border-mark-pink"
+                                />
+                                <button onClick={() => grade(a.id, t.nick)} className="btn-gold !px-3.5 !py-1.5 !text-[11.5px]">Оценить</button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -319,18 +399,23 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
 
   /* все задачи, которые можно выбрать из Банка (реальные + загруженные) */
   const bankTasks = useMemo<PickedTask[]>(() => {
-    const real: PickedTask[] = REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
+    /* реальные задачи ФИПИ: и часть 1 (автопроверка), и часть 2 (ручная) */
+    const real: PickedTask[] = REAL_VARIANT.map((t) => ({
       id: `bank-real-${t.number}`, number: t.number, topic: t.category,
       statement: t.statement, answer: t.answer, solution: t.solution,
+      part: t.part, maxScore: t.maxScore, criteria: t.part === 2 ? t.solution : undefined,
     }));
-    const custom: PickedTask[] = taskBank
-      .filter((t) => !t.is_second_part)
-      .map((t) => ({
-        id: `bank-${t.id}`, number: t.task_number, topic: t.topic,
-        statement: t.condition_text, answer: t.correct_answer, solution: t.solution_text,
-      }));
+    /* загруженные преподавателем: часть 1 + часть 2 */
+    const custom: PickedTask[] = taskBank.map((t) => ({
+      id: `bank-${t.id}`, number: t.task_number, topic: t.topic,
+      statement: t.condition_text, answer: t.correct_answer, solution: t.solution_text,
+      part: t.is_second_part ? 2 : 1, maxScore: t.is_second_part ? 2 : 1,
+      criteria: t.is_second_part ? t.solution_text : undefined,
+    }));
     return [...real, ...custom];
   }, [taskBank]);
+
+  const pickedPart2 = picked.filter((t) => t.part === 2).length;
 
   const toggleTask = (t: PickedTask) =>
     setPicked((p) => (p.some((x) => x.id === t.id) ? p.filter((x) => x.id !== t.id) : [...p, t]));
@@ -407,7 +492,14 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
         {/* свой набор: выбор задач из Банка */}
         {kind === "custom" && (
           <div className="mt-3">
-            <label className={label}>Задачи из Банка · выбрано {picked.length}</label>
+            <label className={label}>
+              Задачи из Банка · выбрано {picked.length}
+              {pickedPart2 > 0 && (
+                <span className="ml-1.5 rounded-full bg-mark-pink/15 px-2 py-0.5 text-[9.5px] font-bold text-mark-pink">
+                  ч.2: {pickedPart2} шт · {picked.filter((t) => t.part === 2).reduce((s, t) => s + (t.maxScore ?? 2), 0)} б. (проверите вручную)
+                </span>
+              )}
+            </label>
             <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border border-board-600/50 bg-board-950/40 p-2.5">
               {bankTasks.map((t) => {
                 const on = picked.some((x) => x.id === t.id);
@@ -418,9 +510,14 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
                       {on && <CheckCircle2 className="h-3.5 w-3.5" />}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex flex-wrap items-center gap-1.5">
                         <b className="font-mono text-[11px] text-mark-yellow">№{t.number}</b>
                         <span className="text-[11px] font-bold text-chalk-300">{t.topic}</span>
+                        {t.part === 2 ? (
+                          <span className="rounded-full bg-mark-pink/15 px-1.5 py-0.5 text-[9px] font-bold text-mark-pink">ч.2 · {t.maxScore} б. · вручную</span>
+                        ) : (
+                          <span className="rounded-full bg-mark-blue/15 px-1.5 py-0.5 text-[9px] font-bold text-mark-blue">ч.1 · авто</span>
+                        )}
                       </span>
                       <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-chalk-500">
                         <LatexText text={t.statement} />
@@ -429,7 +526,7 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
                   </button>
                 );
               })}
-              {bankTasks.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-chalk-500">В Банке пока нет задач с автопроверкой.</p>}
+              {bankTasks.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-chalk-500">В Банке пока нет задач.</p>}
             </div>
           </div>
         )}
@@ -454,6 +551,160 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
 
         <button onClick={send} className="btn-gold mt-5 w-full justify-center py-2.5 text-[13.5px]"><Send className="h-4 w-4" />Отправить</button>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════ ОТЧЁТ ПРЕПОДАВАТЕЛЯ ═══════════════════════
+   Сводная аналитика по группе: групповые метрики, инсайты по каждому
+   ученику («чаще всего ошибается в №12 — исследование функций») и
+   выполнение активных ДЗ к дедлайну.                                */
+export function TeacherReportPanel() {
+  const { user } = useApp();
+  const [tick, setTick] = useState(0);
+  useEffect(() => { ensureDemoStudents(); }, []);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const code = user?.teacherCode || "ARTEM-PRO";
+  const students = useMemo(() => linkedStudentNicks(code), [code, tick]);
+  const stats = useMemo(() => students.map((s) => readStudentStats(s.nick)), [students, tick]);
+  const report = useMemo(() => groupReport(stats), [stats]);
+  const activeHw = useMemo(() => readAssignments().filter((a) => a.deadline && a.deadline > Date.now()), [tick]);
+
+  if (!students.length) {
+    return (
+      <div className="card px-6 py-12 text-center">
+        <Users className="mx-auto h-10 w-10 text-chalk-500" />
+        <p className="mt-3 font-display text-base font-bold text-chalk-200">Учеников пока нет</p>
+        <p className="mt-1 text-[13px] text-chalk-500">Отчёт построится, когда ученики зарегистрируются по вашему коду.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="font-display text-lg font-bold text-chalk-50">Отчёт по группе</h2>
+      <p className="text-[11.5px] text-chalk-500">сводная аналитика · обновляется автоматически</p>
+
+      {/* групповые метрики */}
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "Учеников", value: String(report.studentsCount), icon: Users, tone: "text-mark-blue" },
+          { label: "Активны за неделю", value: String(report.activeWeek), icon: Flame, tone: "text-mark-yellow" },
+          { label: "Средний лучший балл", value: String(report.avgBest), icon: BarChart3, tone: "text-mark-green" },
+          { label: "Среднее решено задач", value: String(report.avgSolved), icon: Target, tone: "text-mark-pink" },
+        ].map((k) => (
+          <div key={k.label} className="card card-hover p-4">
+            <k.icon className={`h-4.5 w-4.5 ${k.tone}`} />
+            <p className={`mt-2 font-display text-2xl font-bold tabular-nums ${k.tone}`}>{k.value}</p>
+            <p className="mt-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-chalk-500">{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ключевые выводы */}
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {report.hardest && (
+          <div className="card flex items-start gap-3 !border-mark-red/40 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-mark-red/15 text-mark-red"><AlertTriangle className="h-4.5 w-4.5" /></span>
+            <div>
+              <p className="text-[12.5px] font-bold text-chalk-50">Слабое место группы</p>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-chalk-300">
+                Группа чаще всего ошибается в <b className="text-mark-red">№{report.hardest.number} — {report.hardest.topic}</b>:{" "}
+                {report.hardest.wrong} ошибок при {report.hardest.errorRate}% неуспешных попыток. Стоит дать дополнительный блок по этой теме.
+              </p>
+            </div>
+          </div>
+        )}
+        {report.bestGrowth && report.bestGrowth.delta > 0 && (
+          <div className="card flex items-start gap-3 !border-mark-green/40 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-mark-green/15 text-mark-green"><TrendingUp className="h-4.5 w-4.5" /></span>
+            <div>
+              <p className="text-[12.5px] font-bold text-chalk-50">Лучший прогресс</p>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-chalk-300">
+                <b className="font-mono text-mark-green">@{report.bestGrowth.nick}</b> вырос(ла) на <b className="text-mark-green">+{report.bestGrowth.delta} баллов</b> с первой попытки. Похвалите — это работает.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* инсайты по каждому ученику */}
+      <h3 className="mt-6 font-display text-sm font-bold text-chalk-50">На что обратить внимание</h3>
+      <div className="mt-3 space-y-3">
+        {stats.map((s) => {
+          const ins = studentInsights(s);
+          const goal = students.find((x) => x.nick === s.nick)?.goal;
+          return (
+            <div key={s.nick} className="card p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Avatar name={s.nick} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-mono text-[13px] font-bold text-chalk-50">@{s.nick}</p>
+                  <p className="text-[10.5px] text-chalk-500">лучший {s.bestScore} · средний {s.avgScore}{goal ? ` · цель ${goal}` : ""} · был(а) {timeAgo(s.lastActive)}</p>
+                </div>
+                {s.bestScore >= (goal ?? 101) ? (
+                  <span className="chip !border-mark-green/50 !text-mark-green"><CheckCircle2 className="h-3.5 w-3.5" />цель достигнута</span>
+                ) : goal ? (
+                  <span className="chip">до цели {goal - s.bestScore} б.</span>
+                ) : null}
+              </div>
+              {ins.length ? (
+                <ul className="mt-2.5 space-y-1.5">
+                  {ins.map((i, idx) => (
+                    <li key={`${s.nick}-${i.number ?? i.topic}-${idx}`} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-chalk-300">
+                      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${idx === 0 ? "bg-mark-red" : "bg-mark-yellow"}`} />
+                      <span>
+                        <b className="text-chalk-50">@{s.nick}</b> {i.sentence}: {i.wrong} ошиб. из {i.attempts} попыток ({i.errorRate}%).
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2.5 text-[12.5px] text-chalk-500">Ошибок пока нет — отличная работа.</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* выполнение активных ДЗ */}
+      <h3 className="mt-6 font-display text-sm font-bold text-chalk-50">Выполнение ДЗ к дедлайну</h3>
+      {activeHw.length ? (
+        <div className="mt-3 space-y-3">
+          {activeHw.map((a) => {
+            const m = deadlineMeta(a);
+            return (
+              <div key={a.id} className="card p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-bold text-chalk-50">{a.title}</p>
+                    <p className="text-[10.5px] text-chalk-500">
+                      до {new Date(a.deadline!).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} · осталось {m.humanLeft}
+                    </p>
+                  </div>
+                  <span className="chip"><Clock className="h-3.5 w-3.5 text-mark-yellow" />{m.doneCount}/{a.targets.length} · {m.progressPct}%</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-board-700/60">
+                  <div className="h-full rounded-full bg-mark-yellow transition-all duration-500" style={{ width: `${m.progressPct}%` }} />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {a.targets.map((t) => (
+                    <span key={t.nick} className={`chip !text-[10px] ${t.status === "done" ? "!border-mark-green/50 !text-mark-green" : t.status === "submitted" ? "!border-mark-pink/50 !text-mark-pink" : t.status === "opened" ? "!border-mark-yellow/50 !text-mark-yellow" : ""}`}>
+                      @{t.nick}{t.status === "done" ? " ✓" : t.status === "submitted" ? " · ч.2" : t.status === "opened" ? " · решает" : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-3 text-[12.5px] text-chalk-500">Активных ДЗ с дедлайном сейчас нет.</p>
+      )}
     </div>
   );
 }

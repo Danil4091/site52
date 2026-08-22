@@ -12,7 +12,7 @@ import { Avatar, Heatmap, LatexText, TitleBadge, levelFromXp } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
 import { RU_AVG_SCORE_2026 } from "./config";
-import TeacherDashboard, { AssignmentsPanel } from "./TeacherDashboard";
+import TeacherDashboard, { AssignmentsPanel, TeacherReportPanel } from "./TeacherDashboard";
 
 /* ═══════════════════════ ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ═══════════════════════ */
 function WeeklyReport() {
@@ -589,7 +589,7 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
 export function AdminPage() {
   const { user, taskBank, addTask, removeTask, importTasks, pushToast, publishedVariants, unpublishVariant, runPublishedVariant } = useApp();
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("komi-admin") === "1");
-  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students" | "hw">("students");
+  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students" | "hw" | "report">("students");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [importText, setImportText] = useState("");
@@ -669,7 +669,7 @@ export function AdminPage() {
       <h1 className="rise rise-1 mt-2 font-display text-3xl font-bold tracking-tight text-chalk-50 sm:text-4xl">{user?.name ?? "Администратор"}</h1>
 
       <div className="rise rise-2 mt-6 flex flex-wrap gap-1.5">
-        {([["students", "Ученики"], ["hw", "Домашние задания"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw", string][]).map(([k, l]) => (
+        {([["students", "Ученики"], ["report", "Отчёт"], ["hw", "Домашние задания"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw" | "report", string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {l}
@@ -822,6 +822,12 @@ export function AdminPage() {
         <div className="mt-5">
           <TeacherDashboard />
           <p className="mt-4 flex items-center gap-2 text-[11px] text-chalk-600"><Sparkles className="h-3.5 w-3.5 text-mark-yellow" />В продакшене статистика берётся из БД по teacher_id; здесь — из локального хранилища учеников, зарегистрированных по вашему коду.</p>
+        </div>
+      )}
+
+      {tab === "report" && (
+        <div className="mt-5">
+          <TeacherReportPanel />
         </div>
       )}
 

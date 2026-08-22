@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, XCircle } from "lucide-react";
+import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, PenLine, XCircle } from "lucide-react";
 import { useApp } from "./store";
 import { PROB_PROBLEMS, REAL_VARIANT, SCALE, answersMatch } from "./data";
-import { getAssignment, type PickedTask } from "./assignments";
+import { getAssignment, submitSolution, type PickedTask } from "./assignments";
 import { AnswerInput, LatexText } from "./ui";
 
 interface HwProblem {
@@ -12,6 +12,10 @@ interface HwProblem {
   statement: string;
   answer: string;
   solution?: string;
+  /** 1 = автопроверка (краткий ответ), 2 = ручная проверка (развёрнутое решение) */
+  part: 1 | 2;
+  maxScore?: number;
+  criteria?: string;
 }
 
 /** Собрать список задач для ДЗ (вариант, блок по теме или свой набор). */
@@ -20,6 +24,7 @@ function buildProblems(kind: "variant" | "block" | "custom", variantId?: string,
     return (picked ?? []).map((p) => ({
       id: p.id, number: p.number, topic: p.topic,
       statement: p.statement, answer: p.answer ?? "", solution: p.solution,
+      part: p.part ?? 1, maxScore: p.maxScore, criteria: p.criteria,
     }));
   }
   if (kind === "variant") {
@@ -27,6 +32,7 @@ function buildProblems(kind: "variant" | "block" | "custom", variantId?: string,
       return REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
         id: `real-${t.number}`, number: t.number, topic: t.category,
         statement: t.statement, answer: t.answer ?? "", solution: t.solution,
+        part: 1 as const, maxScore: t.maxScore,
       }));
     }
     /* авторский вариант берётся из publishedVariants через store в компоненте */
@@ -36,10 +42,10 @@ function buildProblems(kind: "variant" | "block" | "custom", variantId?: string,
   const out: HwProblem[] = [];
   if (topicNumber === 4 || topicNumber === 5) {
     PROB_PROBLEMS.filter((p) => (p.topic.includes("Сложная") ? 5 : 4) === topicNumber)
-      .forEach((p) => out.push({ id: `prob-${p.id}`, number: topicNumber ?? 4, topic: p.topic, statement: p.text, answer: p.answer, solution: p.explain }));
+      .forEach((p) => out.push({ id: `prob-${p.id}`, number: topicNumber ?? 4, topic: p.topic, statement: p.text, answer: p.answer, solution: p.explain, part: 1, maxScore: 1 }));
   }
   REAL_VARIANT.filter((t) => t.part === 1 && t.number === topicNumber)
-    .forEach((t) => out.push({ id: `real-${t.number}-${out.length}`, number: t.number, topic: t.category, statement: t.statement, answer: t.answer ?? "", solution: t.solution }));
+    .forEach((t) => out.push({ id: `real-${t.number}-${out.length}`, number: t.number, topic: t.category, statement: t.statement, answer: t.answer ?? "", solution: t.solution, part: 1, maxScore: t.maxScore }));
   const limit = taskCount ?? 10;
   return out.slice(0, limit);
 }
@@ -56,6 +62,7 @@ export default function AssignmentRunner() {
         return v.tasks.filter((t) => t.type === "short_answer").map((t) => ({
           id: t.id, number: t.number, topic: t.topic,
           statement: t.latex_statement, answer: t.answer ?? "", solution: t.solution_latex,
+          part: 1 as const, maxScore: 1,
         }));
       }
     }
@@ -66,6 +73,12 @@ export default function AssignmentRunner() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [finished, setFinished] = useState(false);
+  /** Развёрнутые решения части 2 — на ручную проверку преподавателю. */
+  const [part2Solutions, setPart2Solutions] = useState<Record<string, string>>({});
+  const [part2Sent, setPart2Sent] = useState(false);
+
+  const part1 = problems.filter((p) => p.part === 1);
+  const part2 = problems.filter((p) => p.part === 2);
 
   if (!assignment) {
     return (
@@ -76,9 +89,10 @@ export default function AssignmentRunner() {
     );
   }
 
-  const total = problems.length;
+  /* часть 1: автопроверка; часть 2 оценивается вручную и в этот балл не входит */
+  const total = part1.length;
   const doneCount = Object.values(checked).filter(Boolean).length;
-  const correctCount = problems.filter((p) => checked[p.id] && answersMatch(answers[p.id] ?? "", p.answer)).length;
+  const correctCount = part1.filter((p) => checked[p.id] && answersMatch(answers[p.id] ?? "", p.answer)).length;
 
   const check = (p: HwProblem) => {
     if (!(answers[p.id] ?? "").trim()) return;
@@ -100,8 +114,12 @@ export default function AssignmentRunner() {
         <CheckCircle2 className="mx-auto h-12 w-12 text-mark-green" />
         <h2 className="mt-3 font-display text-2xl font-bold text-chalk-50">ДЗ отправлено на проверку</h2>
         <p className="mt-2 text-[13.5px] text-chalk-400">
-          Верно {correctCount} из {total}. Преподаватель увидит ваш результат в кабинете.
+          Часть 1: верно {correctCount} из {total}.
+          {part2.length > 0 && (part2Sent
+            ? " Развёрнутые решения части 2 отправлены преподавателю — оценка появится после ручной проверки."
+            : " Часть 2 вы не сдали — её можно дослать позже.")}
         </p>
+        <p className="mt-1 text-[12px] text-chalk-500">Преподаватель увидит ваш результат в кабинете.</p>
         <button onClick={() => go("home")} className="btn-gold mt-5 px-6 py-2.5 text-sm">На главную</button>
       </div>
     );
@@ -122,9 +140,9 @@ export default function AssignmentRunner() {
         <span className="chip"><CheckCircle2 className="h-3.5 w-3.5 text-mark-green" />{doneCount}/{total}</span>
       </div>
 
-      {/* задачи */}
+      {/* часть 1 — краткие ответы с автопроверкой */}
       <div className="mt-4 space-y-3">
-        {problems.map((p, i) => {
+        {part1.map((p, i) => {
           const isChecked = !!checked[p.id];
           const ok = isChecked && answersMatch(answers[p.id] ?? "", p.answer);
           return (
@@ -165,17 +183,72 @@ export default function AssignmentRunner() {
         })}
       </div>
 
+      {/* часть 2 — развёрнутые решения на ручную проверку */}
+      {part2.length > 0 && (
+        <div className="mt-6">
+          <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50">
+            <PenLine className="h-4 w-4 text-mark-pink" />Часть 2 · развёрнутые решения
+          </h2>
+          <p className="mt-1 text-[11.5px] text-chalk-500">Запишите решение — преподаватель проверит его вручную по критериям ФИПИ.</p>
+          <div className="mt-3 space-y-3">
+            {part2.map((p, i) => (
+              <div key={p.id} className={`card rise rise-${Math.min((i % 5) + 1, 5)} !border-mark-pink/30 p-4`}>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-mark-pink/20 font-display text-[12px] font-bold text-mark-pink">{p.number}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-chalk-500">{p.topic}</span>
+                  <span className="ml-auto rounded-full bg-mark-pink/15 px-2 py-0.5 text-[10px] font-bold text-mark-pink">до {p.maxScore ?? 2} б. · вручную</span>
+                </div>
+                <p className="mt-2.5 text-[14px] leading-relaxed text-chalk-100"><LatexText text={p.statement} /></p>
+                {p.criteria && (
+                  <p className="mt-2 rounded-lg border border-board-600/50 bg-board-950/40 p-2.5 text-[11.5px] leading-relaxed text-chalk-400">
+                    <b className="text-chalk-300">Критерии:</b> <LatexText text={p.criteria} />
+                  </p>
+                )}
+                <textarea
+                  value={part2Solutions[p.id] ?? ""}
+                  onChange={(e) => setPart2Solutions((s) => ({ ...s, [p.id]: e.target.value }))}
+                  rows={5}
+                  disabled={part2Sent}
+                  placeholder="Запишите ход решения: формулы, преобразования, ответ…"
+                  className="mt-3 w-full resize-y rounded-lg border border-board-600/70 bg-board-950/50 p-3 font-mono text-[13px] leading-relaxed text-chalk-100 outline-none transition-all placeholder:text-chalk-600 focus:border-mark-pink disabled:opacity-60"
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-center">
+            {part2Sent ? (
+              <span className="chip !border-mark-green/50 !text-mark-green"><CheckCircle2 className="h-3.5 w-3.5" />Решения отправлены преподавателю на проверку</span>
+            ) : (
+              <button
+                onClick={() => {
+                  if (!user) return;
+                  const combined = part2.map((p) => `№${p.number} (${p.topic}):\n${(part2Solutions[p.id] ?? "").trim() || "(нет решения)"}`).join("\n\n");
+                  submitSolution(assignment.id, user.nickname, combined);
+                  setPart2Sent(true);
+                }}
+                disabled={!part2.some((p) => (part2Solutions[p.id] ?? "").trim())}
+                className="btn-ghost !border-mark-pink/50 !text-mark-pink px-6 py-2.5 text-[13px] disabled:opacity-40"
+              >
+                <PenLine className="h-4 w-4" />Отправить решения на проверку
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {problems.length === 0 && (
         <div className="card mt-4 px-6 py-10 text-center">
           <p className="text-[13.5px] text-chalk-400">В этом задании пока нет доступных задач.</p>
         </div>
       )}
 
-      <div className="mt-5 flex justify-center">
-        <button onClick={finish} disabled={doneCount === 0} className="btn-gold px-8 py-3 text-[14.5px] disabled:opacity-40">
-          Завершить ДЗ{doneCount > 0 ? ` · ${correctCount}/${doneCount} верно` : ""}
-        </button>
-      </div>
+      {part1.length > 0 && (
+        <div className="mt-5 flex justify-center">
+          <button onClick={finish} disabled={doneCount === 0} className="btn-gold px-8 py-3 text-[14.5px] disabled:opacity-40">
+            Завершить ДЗ{doneCount > 0 ? ` · ${correctCount}/${doneCount} верно` : ""}
+          </button>
+        </div>
+      )}
       <p className="mt-2 text-center text-[11px] text-chalk-600">Вы вошли как @{user?.nickname} · результат увидит преподаватель</p>
     </div>
   );

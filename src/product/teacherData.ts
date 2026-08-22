@@ -177,3 +177,108 @@ export function timeAgo(ts: number | null): string {
   if (d < 7) return `${d} дн назад`;
   return new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
+
+/* ═══════════════════════ АНАЛИТИКА ПРЕПОДАВАТЕЛЯ ═══════════════════════
+   Инсайты строятся из двух источников:
+   1) topics  — агрегат «решено/попыток» по номерам (часть 1);
+   2) activity — живая лента (ошибки в задачах и вариантах).
+   В продакшене то же самое приходит из БД одним запросом.            */
+
+export interface StudentInsight {
+  /** номер задания или null, если проблема описана темой в целом */
+  number: number | null;
+  topic: string;
+  wrong: number;       // сколько раз ошибся
+  attempts: number;    // всего попыток по теме
+  errorRate: number;   // % ошибок (0–100)
+  sentence: string;    // готовая фраза для отчёта
+}
+
+/** Главные проблемы ученика: топ тем с наибольшим числом ошибок. */
+export function studentInsights(s: StudentStats): StudentInsight[] {
+  const byNumber = new Map<number, { wrong: number; attempts: number }>();
+
+  /* из агрегата тем: ошибки = попытки − решено */
+  for (const [numStr, t] of Object.entries(s.topics)) {
+    const n = Number(numStr);
+    if (!Number.isFinite(n) || t.attempts <= 0) continue;
+    const wrong = Math.max(0, t.attempts - (t.solved || 0));
+    const cur = byNumber.get(n) ?? { wrong: 0, attempts: 0 };
+    byNumber.set(n, { wrong: cur.wrong + wrong, attempts: cur.attempts + t.attempts });
+  }
+  /* из ленты активности: явные неверные ответы */
+  for (const a of s.activity) {
+    if (a.kind !== "task" || a.taskNumber === undefined || a.correct !== false) continue;
+    const cur = byNumber.get(a.taskNumber) ?? { wrong: 0, attempts: 0 };
+    byNumber.set(a.taskNumber, { wrong: cur.wrong + 1, attempts: cur.attempts + 1 });
+  }
+
+  const list: StudentInsight[] = [...byNumber.entries()]
+    .filter(([, v]) => v.wrong > 0)
+    .map(([n, v]) => {
+      const topic = topicName(n);
+      const errorRate = Math.round((v.wrong / Math.max(1, v.attempts)) * 100);
+      return {
+        number: n,
+        topic,
+        wrong: v.wrong,
+        attempts: v.attempts,
+        errorRate,
+        sentence: `чаще всего ошибается в №${n} — ${topic.toLowerCase()}`,
+      };
+    })
+    .sort((a, b) => b.wrong - a.wrong || b.errorRate - a.errorRate);
+
+  return list.slice(0, 3);
+}
+
+export interface GroupReport {
+  studentsCount: number;
+  activeWeek: number;      // были активны за 7 дней
+  avgBest: number;         // средний лучший балл
+  avgSolved: number;       // среднее число решённых задач
+  hardest: StudentInsight | null; // самая проблемная тема группы
+  bestGrowth: { nick: string; delta: number } | null; // наибольший прирост балла
+}
+
+/** Сводный отчёт по всей группе учеников. */
+export function groupReport(list: StudentStats[]): GroupReport {
+  if (!list.length) {
+    return { studentsCount: 0, activeWeek: 0, avgBest: 0, avgSolved: 0, hardest: null, bestGrowth: null };
+  }
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const activeWeek = list.filter((s) => s.lastActive !== null && s.lastActive >= weekAgo).length;
+  const avgBest = Math.round(list.reduce((sum, s) => sum + s.bestScore, 0) / list.length);
+  const avgSolved = Math.round(list.reduce((sum, s) => sum + s.solvedCount, 0) / list.length);
+
+  /* самая проблемная тема группы — максимум суммарных ошибок */
+  const byNumber = new Map<number, { wrong: number; attempts: number }>();
+  for (const s of list) {
+    for (const ins of studentInsights(s)) {
+      if (ins.number === null) continue;
+      const cur = byNumber.get(ins.number) ?? { wrong: 0, attempts: 0 };
+      byNumber.set(ins.number, { wrong: cur.wrong + ins.wrong, attempts: cur.attempts + ins.attempts });
+    }
+  }
+  let hardest: StudentInsight | null = null;
+  for (const [n, v] of byNumber) {
+    if (!hardest || v.wrong > hardest.wrong) {
+      hardest = {
+        number: n, topic: topicName(n), wrong: v.wrong, attempts: v.attempts,
+        errorRate: Math.round((v.wrong / Math.max(1, v.attempts)) * 100),
+        sentence: `группа чаще всего ошибается в №${n} — ${topicName(n).toLowerCase()}`,
+      };
+    }
+  }
+
+  /* наибольший прирост: последний балл минус первый */
+  let bestGrowth: GroupReport["bestGrowth"] = null;
+  for (const s of list) {
+    const first = s.attempts[0]?.secondary ?? 0;
+    const last = s.attempts[s.attempts.length - 1]?.secondary ?? 0;
+    const delta = last - first;
+    if (!bestGrowth || delta > bestGrowth.delta) bestGrowth = { nick: s.nick, delta };
+  }
+
+  return { studentsCount: list.length, activeWeek, avgBest, avgSolved, hardest, bestGrowth };
+}
