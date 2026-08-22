@@ -38,3 +38,18 @@ def verify_password(password: str, stored: str) -> bool:
 def needs_rehash(stored: str) -> bool:
     """True, если сохранённое значение ещё не хеш (нужна миграция)."""
     return not is_hashed(stored)
+
+
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # без 0/O/1/I
+
+
+def generate_recovery_code() -> str:
+    """Человекочитаемый резервный код вида KX7Q-AB3D (для восстановления без почты)."""
+    import secrets as _s
+
+    body = "".join(_s.choice(_CODE_ALPHABET) for _ in range(8))
+    return f"{body[:4]}-{body[4:]}"
+
+
+def normalize_recovery_code(code: str) -> str:
+    return code.strip().upper().replace(" ", "")

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, GraduationCap, KeyRound, LogIn, UserPlus, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, GraduationCap, KeyRound, LogIn, ShieldCheck, UserPlus, X } from "lucide-react";
 import { useApp, loadSession, makeInviteCode, logReferral, type ProductUser } from "./store";
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_PASSWORD, ADMIN_TEACHER_CODE } from "./config";
 import { resolveTeacher } from "./variantSchema";
 import { isApiEnabled } from "./api";
+import { generateRecoveryCode, saveRecoveryCode } from "./recovery";
 import type { LegalDoc } from "./LegalDocs";
 
 type StoredUser = ProductUser & { password: string };
@@ -67,6 +68,9 @@ export default function AuthModal({
   const [goal, setGoal] = useState(80);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* резервный код, выданный при регистрации — показывается один раз */
+  const [issuedCode, setIssuedCode] = useState<string | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   /* при первом открытии — гарантируем мастер-аккаунт преподавателя */
   useEffect(() => { seedAdminIfNeeded(); }, []);
@@ -90,7 +94,52 @@ export default function AuthModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const copyCode = () => {
+    if (!issuedCode) return;
+    navigator.clipboard?.writeText(issuedCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 1600);
+  };
+
   if (!open) return null;
+
+  /* ── экран с резервным кодом после регистрации ── */
+  if (issuedCode) {
+    return (
+      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-board-950/80 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="pop-in w-full max-w-md rounded-t-2xl border border-board-600/60 bg-board-850 p-6 shadow-2xl sm:rounded-xl" role="dialog" aria-modal="true" aria-label="Резервный код">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-mark-green/15 text-mark-green">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="font-display text-lg font-bold tracking-tight text-chalk-50">Аккаунт создан!</h2>
+              <p className="text-[11px] text-chalk-500">сохраните резервный код — он заменяет почту</p>
+            </div>
+          </div>
+
+          <p className="mt-4 text-[12.5px] leading-relaxed text-chalk-400">
+            Мы не используем e-mail для восстановления пароля. Ваш единственный способ вернуть доступ — этот код. Сохраните его (запишите или сделайте скриншот).
+          </p>
+
+          <div className="mt-4 flex items-center gap-2 rounded-xl border-2 border-dashed border-mark-yellow/60 bg-mark-yellow/8 px-4 py-4">
+            <KeyRound className="h-5 w-5 shrink-0 text-mark-yellow" />
+            <code className="flex-1 text-center font-mono text-xl font-bold tracking-[0.2em] text-mark-yellow">{issuedCode}</code>
+            <button onClick={copyCode} className="rounded-lg p-2 text-chalk-400 transition-colors hover:bg-board-700 hover:text-mark-yellow" aria-label="Скопировать код">
+              {codeCopied ? <Check className="h-4 w-4 text-mark-green" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="mt-1.5 text-center text-[11px] font-semibold text-chalk-500">
+            {codeCopied ? "Скопировано ✓" : "Нажмите, чтобы скопировать"}
+          </p>
+
+          <button onClick={() => { setIssuedCode(null); onClose(); }} className="mt-5 w-full rounded-lg bg-mark-yellow py-3 text-sm font-bold text-board-950 shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98]">
+            Я сохранил(а) код — продолжить
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const field =
     "w-full rounded-lg border-2 border-board-600/70 bg-board-800/60 px-3.5 py-2.5 text-sm font-medium text-chalk-50 outline-none transition-all duration-200 placeholder:text-chalk-500 focus:border-mark-yellow focus:bg-board-800 focus:ring-4 focus:ring-mark-yellow/10";
@@ -127,6 +176,10 @@ export default function AuthModal({
     const referrer = users.find((u) => makeInviteCode(u.nickname) === code);
     if (referrer) logReferral(code, nick);
 
+    /* резервный код для восстановления пароля без почты */
+    const recovery = generateRecoveryCode();
+    saveRecoveryCode(nick, recovery);
+
     const user: StoredUser = {
       nickname: nick,
       role: "student",
@@ -142,7 +195,9 @@ export default function AuthModal({
     const { password: _pw, ...rest } = user;
     login(rest);
     if (referrer) pushToast(`Бонус по приглашению от @${referrer.nickname}: +30 XP`);
-    onClose();
+    /* показываем резервный код один раз — до закрытия этого экрана */
+    setIssuedCode(recovery);
+    setCodeCopied(false);
   };
 
   return (

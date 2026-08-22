@@ -51,10 +51,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(160))
     nickname: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    # Хеш резервного кода для восстановления пароля без почты (bcrypt).
+    recovery_code_hash: Mapped[Optional[str]] = mapped_column(String(128))
     role: Mapped[UserRole] = mapped_column(PyEnum(UserRole, name="user_role"), default=UserRole.STUDENT, nullable=False)
 
     # Код, по которому ученики привязываются к этому преподавателю (только для teacher).

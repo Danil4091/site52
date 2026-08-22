@@ -29,7 +29,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .models import Base, ExamType, Task, User, Variant
-from .security import hash_password, needs_rehash, verify_password
+from .security import (
+    generate_recovery_code,
+    hash_password,
+    needs_rehash,
+    normalize_recovery_code,
+    verify_password,
+)
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
@@ -340,10 +346,17 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
 # ─────────────────────────── регистрация ───────────────────────────
 @app.post("/api/auth/register", status_code=201)
 async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
+    """Регистрация без обязательной почты.
+
+    Возвращает одноразовый резервный код (recovery_code) — он заменяет
+    восстановление по e-mail. Ученик должен сохранить его: по коду + нику
+    можно сбросить пароль через /api/auth/recover.
+    """
     from .models import User
-    exists = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+    nick = body.nickname.strip().lower()
+    exists = (await db.execute(select(User).where(User.nickname == nick))).scalar_one_or_none()
     if exists:
-        raise HTTPException(409, "Такой e-mail уже зарегистрирован")
+        raise HTTPException(409, "Такой ник уже занят")
 
     # Привязка к преподавателю по коду (если указан и найден).
     teacher_id: Optional[uuid.UUID] = None
@@ -357,37 +370,80 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         if teacher is not None:
             teacher_id = teacher.id
 
+    recovery_code = generate_recovery_code()
     user = User(
         email=body.email,
         password_hash=hash_password(body.password),  # bcrypt, plaintext никогда не сохраняется
         full_name=body.full_name,
-        nickname=body.nickname,
+        nickname=nick,
         telegram_id=body.telegram_id,
         teacher_id=teacher_id,
+        recovery_code_hash=hash_password(normalize_recovery_code(recovery_code)),
     )
     db.add(user)
     await db.commit()
-    return {"id": str(user.id), "nickname": user.nickname, "teacher_id": str(teacher_id) if teacher_id else None}
+    return {
+        "id": str(user.id),
+        "nickname": user.nickname,
+        "teacher_id": str(teacher_id) if teacher_id else None,
+        "recovery_code": recovery_code,  # показывается один раз
+    }
 
 
-class ForgotPasswordIn(BaseModel):
-    email: str
+class RecoverIn(BaseModel):
+    nickname: str
+    recovery_code: str
+    new_password: str = Field(min_length=4, max_length=128)
 
 
-@app.post("/api/auth/forgot-password")
-async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
-    """Запрос ссылки для сброса пароля.
+@app.post("/api/auth/recover")
+async def recover_password(body: RecoverIn, db: AsyncSession = Depends(get_db)):
+    """Восстановление пароля БЕЗ почты — по нику + резервному коду.
 
-    Всегда возвращает успех, чтобы не раскрывать, зарегистрирован ли e-mail
-    (защита от enumeration-атак). Реальная отправка письма подключается здесь.
+    Код выдаётся один раз при регистрации. При успешном сбросе пароль
+    меняется; код остаётся действительным (многоразовый), пока пользователь
+    не сменит его. Бесплатно, не требует почтового сервиса.
     """
     from .models import User
-    user = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
-    if user:
-        # TODO(prod): сгенерировать одноразовый токен, сохранить с TTL 30 мин
-        # и отправить письмо со ссылкой {FRONTEND_URL}/reset?token=…
-        pass
-    return {"ok": True, "message": "Если e-mail зарегистрирован, письмо отправлено"}
+    user = (
+        await db.execute(select(User).where(User.nickname == body.nickname.strip().lower()))
+    ).scalar_one_or_none()
+    if user is None or not user.recovery_code_hash:
+        raise HTTPException(400, "Неверный ник или код")
+    if not verify_password(normalize_recovery_code(body.recovery_code), user.recovery_code_hash):
+        raise HTTPException(400, "Неверный ник или код")
+    user.password_hash = hash_password(body.new_password)
+    await db.commit()
+    return {"ok": True, "message": "Пароль обновлён"}
+
+
+class ResetStudentPasswordIn(BaseModel):
+    student_nick: str
+    new_password: str = Field(min_length=4, max_length=128)
+
+
+@app.post("/api/teacher/reset-student-password")
+async def reset_student_password(
+    body: ResetStudentPasswordIn,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Преподаватель сбрасывает пароль привязанному ученику (вместо почты).
+
+    Учитель передаёт новый пароль ученику лично. Разрешено только для
+    учеников, привязанных к этому преподавателю (по teacher_id).
+    """
+    from .models import User, UserRole
+    student = (
+        await db.execute(select(User).where(User.nickname == body.student_nick.strip().lower()))
+    ).scalar_one_or_none()
+    if student is None or student.role != UserRole.STUDENT:
+        raise HTTPException(404, "Ученик не найден")
+    if student.teacher_id != teacher.id:
+        raise HTTPException(403, "Этот ученик не привязан к вам")
+    student.password_hash = hash_password(body.new_password)
+    await db.commit()
+    return {"ok": True, "message": f"Пароль для @{student.nickname} обновлён"}
 
 
 # ══════════════════════════════════════════════════════════════════════

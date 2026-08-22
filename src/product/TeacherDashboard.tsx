@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ClipboardList,
-  Clock, Copy, Flame, GraduationCap, PenLine, Send, Sparkles, Target, Trash2, TrendingUp, Users, XCircle,
+  Clock, Copy, Flame, GraduationCap, KeyRound, PenLine, Send, Sparkles, Target, Trash2, TrendingUp, Users, XCircle,
 } from "lucide-react";
 import { useApp } from "./store";
 import { BANK, REAL_VARIANT } from "./data";
@@ -89,6 +89,24 @@ export default function TeacherDashboard() {
   const { user, pushToast } = useApp();
   const [selected, setSelected] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /* сброс пароля ученику (вместо почты) */
+  const [resetPw, setResetPw] = useState<string | null>(null);
+
+  const resetStudentPassword = (nick: string) => {
+    /* генерируем простой пароль и сразу задаём его ученику (демо-режим) */
+    const pw = "komi-" + Math.random().toString(36).slice(2, 8);
+    try {
+      const raw = localStorage.getItem("komi-users-v1");
+      const users = raw ? (JSON.parse(raw) as { nickname: string; password: string }[]) : [];
+      const u = users.find((x) => x.nickname === nick);
+      if (u) {
+        u.password = pw;
+        localStorage.setItem("komi-users-v1", JSON.stringify(users));
+      }
+    } catch { /* ок */ }
+    setResetPw(pw);
+    pushToast(`Новый пароль для @${nick} создан — передайте его лично`);
+  };
 
   /* при первом открытии — демо-ученики (локальный режим) */
   useEffect(() => { ensureDemoStudents(); }, []);
@@ -160,7 +178,7 @@ export default function TeacherDashboard() {
             </div>
           )}
           {students.map((s) => (
-            <button key={s.nick} onClick={() => setSelected(s.nick)} className="card card-hover p-4 text-left">
+            <button key={s.nick} onClick={() => { setSelected(s.nick); setResetPw(null); }} className="card card-hover p-4 text-left">
               <div className="flex items-center gap-3">
                 <Avatar name={s.nick} className="h-11 w-11 text-[13px]" />
                 <div className="min-w-0 flex-1">
@@ -218,6 +236,26 @@ export default function TeacherDashboard() {
               </div>
               <p className="mt-4 text-[10.5px] font-semibold text-chalk-500">Успеваемость по темам (№1–12)</p>
               <div className="mt-1.5"><TopicMiniMap topics={active.topics} /></div>
+
+              {/* сброс пароля ученику — вместо восстановления по почте */}
+              <div className="mt-4 rounded-lg border border-board-700/50 bg-board-800/40 p-3">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold text-chalk-300"><KeyRound className="h-3.5 w-3.5 text-mark-blue" />Доступ ученика</p>
+                {resetPw ? (
+                  <div className="mt-2">
+                    <p className="text-[10.5px] text-chalk-500">Новый пароль (передайте лично):</p>
+                    <div className="mt-1 flex items-center gap-1.5 rounded-md border border-dashed border-mark-yellow/50 bg-mark-yellow/8 px-2 py-1.5">
+                      <code className="flex-1 font-mono text-[13px] font-bold text-mark-yellow">{resetPw}</code>
+                      <button onClick={() => { navigator.clipboard?.writeText(resetPw); pushToast("Пароль скопирован"); }} className="rounded p-1 text-chalk-400 hover:text-mark-yellow" aria-label="Скопировать пароль">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => resetStudentPassword(active.nick)} className="btn-ghost mt-2 w-full px-2 py-1.5 text-[11px]">
+                    Сбросить пароль
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="card p-4 lg:col-span-1">
