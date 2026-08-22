@@ -51,7 +51,7 @@ export default function ProfileSettings() {
       if (isApiEnabled()) {
       try {
         const token = localStorage.getItem("komi-token") ?? "";
-        const res = await bindTeacherApi(code, token);
+        const res = await bindTeacherApi(token, code);
         ok = res.ok;
         teacherName = res.teacher.nickname;
       } catch {

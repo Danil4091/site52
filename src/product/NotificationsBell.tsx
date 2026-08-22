@@ -30,7 +30,7 @@ export function NotificationsBell() {
   return (
     <div className="relative" ref={boxRef}>
       <button onClick={() => setOpen((o) => !o)}
-        className={`relative flex h-9 w-9 items-center justify-center rounded-lg border transition-all duration-200 active:scale-95 ${open ? "border-mark-yellow/60 bg-board-700 text-mark-yellow" : "border-board-600/70 bg-board-800/60 text-chalk-400 hover:text-chalk-50"}`}
+        className={`relative flex h-11 w-11 items-center justify-center rounded-lg border transition-all duration-200 active:scale-95 md:h-9 md:w-9 ${open ? "border-mark-yellow/60 bg-board-700 text-mark-yellow" : "border-board-600/70 bg-board-800/60 text-chalk-400 hover:text-chalk-50"}`}
         aria-label={`Уведомления${unread ? `, непрочитанных: ${unread}` : ""}`}>
         <Bell className="h-4 w-4" />
         {unread > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-mark-red px-1 text-[9px] font-bold text-board-950">{unread}</span>}

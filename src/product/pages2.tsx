@@ -685,7 +685,7 @@ export function AdminPage() {
       <div className="rise rise-2 mt-6 flex flex-wrap gap-1.5">
         {([["students", "Ученики"], ["report", "Отчёт"], ["hw", "Домашние задания"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw" | "report", string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={`rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
+            className={`inline-flex min-h-[44px] items-center rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {l}
           </button>
         ))}
