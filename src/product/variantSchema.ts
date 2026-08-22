@@ -162,11 +162,15 @@ export const TEACHER_CODES: Record<string, string> = {
   "PROBNIK-7": ADMIN_DISPLAY_NAME,
 };
 
+/** Префикс основного кода («SYSOLA» из «SYSOLA-PRO») — для фолбэк-проверки. */
+const ADMIN_CODE_PREFIX = ADMIN_TEACHER_CODE.split("-")[0];
+const FALLBACK_RE = new RegExp(`^(KOMI|${ADMIN_CODE_PREFIX})-[A-Z0-9]{3,8}$`);
+
 export function resolveTeacher(code: string): string | null {
   const c = code.trim().toUpperCase();
   if (TEACHER_CODES[c]) return TEACHER_CODES[c];
-  /* любые коды формата KOMI-… / PUDOV-… считаем кодами основного преподавателя */
-  if (/^(KOMI|PUDOV)-[A-Z0-9]{3,8}$/.test(c)) return ADMIN_DISPLAY_NAME;
+  /* любые коды формата KOMI-… / SYSOLA-… считаем кодами основного преподавателя */
+  if (FALLBACK_RE.test(c)) return ADMIN_DISPLAY_NAME;
   return null;
 }
 

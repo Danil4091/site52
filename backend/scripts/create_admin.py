@@ -4,7 +4,7 @@
 Читает из окружения (.env):
   ADMIN_USERNAME     — логин/ник преподавателя   (по умолчанию: daniil)
   ADMIN_PASSWORD     — пароль                     (по умолчанию: Pudov-Ege-2026)
-  ADMIN_TEACHER_CODE — код привязки для учеников  (по умолчанию: PUDOV-PRO)
+  ADMIN_TEACHER_CODE — код привязки для учеников  (по умолчанию: SYSOLA-PRO)
 
 Скрипт идемпотентен: если аккаунт уже есть — ничего не меняет.
 
@@ -43,7 +43,7 @@ def _hash(password: str) -> str:
 def main() -> None:
     username = os.getenv("ADMIN_USERNAME", "daniil")
     password = os.getenv("ADMIN_PASSWORD", "Pudov-Ege-2026")
-    teacher_code = os.getenv("ADMIN_TEACHER_CODE", "PUDOV-PRO")
+    teacher_code = os.getenv("ADMIN_TEACHER_CODE", "SYSOLA-PRO")
     full_name = os.getenv("ADMIN_FULL_NAME", "Даниил Андреевич Пудов")
 
     engine = create_engine(SYNC_URL)

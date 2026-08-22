@@ -47,7 +47,8 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1
 # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "daniil")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Pudov-Ege-2026")
-ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "PUDOV-PRO")
+# Код привязки учеников — отсылка к реке Сысоле (Сыктывкар), без фамилии.
+ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "SYSOLA-PRO")
 ADMIN_FULL_NAME = os.getenv("ADMIN_FULL_NAME", "Даниил Андреевич Пудов")
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
