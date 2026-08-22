@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .models import Base, ExamType, Task, User, Variant
+from .security import hash_password, needs_rehash, verify_password
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
@@ -66,12 +67,15 @@ async def ensure_admin() -> None:
         if existing is not None:
             existing.role = UserRole.TEACHER
             existing.teacher_code = ADMIN_TEACHER_CODE
+            # Миграция: если мастер-аккаунт ещё на plaintext-пароле — хешируем.
+            if needs_rehash(existing.password_hash) and existing.password_hash == ADMIN_PASSWORD:
+                existing.password_hash = hash_password(ADMIN_PASSWORD)
             await db.commit()
             return
         db.add(
             User(
                 email=f"{ADMIN_USERNAME}@repetitor.local",
-                password_hash=ADMIN_PASSWORD,  # в проде — bcrypt
+                password_hash=hash_password(ADMIN_PASSWORD),  # bcrypt
                 full_name="Артём",
                 nickname=ADMIN_USERNAME,
                 role=UserRole.TEACHER,
@@ -163,7 +167,7 @@ class ImportReport(BaseModel):
 
 class RegisterIn(BaseModel):
     email: Optional[str] = None
-    password: str
+    password: str = Field(min_length=4, max_length=128)
     full_name: Optional[str] = None
     nickname: str = Field(min_length=2, max_length=32)
     telegram_id: Optional[int] = None  # задел под Telegram-бота
@@ -355,7 +359,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
 
     user = User(
         email=body.email,
-        password_hash=body.password,  # в проде — bcrypt: passlib.hash.bcrypt.hash(...)
+        password_hash=hash_password(body.password),  # bcrypt, plaintext никогда не сохраняется
         full_name=body.full_name,
         nickname=body.nickname,
         telegram_id=body.telegram_id,
@@ -425,11 +429,16 @@ class LoginIn(BaseModel):
 
 @app.post("/api/v1/auth/login")
 async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
-    """Вход: возвращает токен и роль. Демо хранит пароль открытым текстом —
-    в проде заменить на bcrypt (passlib)."""
+    """Вход: возвращает токен и роль. Пароли проверяются через bcrypt;
+    legacy plaintext-пароли (демо-аккаунты) при успешном входе
+    автоматически заменяются хешем (бесшовная миграция)."""
     user = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
-    if user is None or user.password_hash != body.password:
+    if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Неверный e-mail или пароль")
+    # Бесшовная миграция: plaintext → bcrypt при первом успешном входе.
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
+        await db.commit()
     return {
         "token": create_token(str(user.id), user.role.value),
         "role": user.role.value,

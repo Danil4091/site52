@@ -6,3 +6,4 @@ asyncpg>=0.29
 pydantic>=2.7
 greenlet>=3.0
 alembic>=1.13
+bcrypt>=4.1

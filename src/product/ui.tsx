@@ -1,8 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import katex from "katex";
-import "katex/dist/katex.min.css";
+import type katexType from "katex";
 import { Check, Crown, Delete, Eraser, Flame, Keyboard, Minus, Snowflake } from "lucide-react";
 import { TITLES, titleForLevel } from "./data";
+
+/* KaTeX грузится лениво: отдельный чанк, подгружается параллельно со
+   стартовым, а не входит в него. Первая отрисовка формул показывает
+   сырой TeX-текст (на ~50–150 мс), затем подменяется рендером. */
+let katexPromise: Promise<typeof katexType> | null = null;
+function loadKatex(): Promise<typeof katexType> {
+  if (!katexPromise) {
+    katexPromise = Promise.all([import("katex"), import("katex/dist/katex.min.css")]).then(
+      ([mod]) => (mod.default ?? mod) as typeof katexType
+    );
+  }
+  return katexPromise;
+}
 
 /* ═══════════════════════ LaTeX-рендеринг ═══════════════════════
    Принимает строку из базы/API и рендерит:
@@ -28,7 +40,22 @@ function parseTex(text: string): Part[] {
 }
 
 function Tex({ tex, block }: { tex: string; block?: boolean }) {
-  const html = katex.renderToString(tex, { displayMode: !!block, throwOnError: false, errorColor: "#ff7a6b" });
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadKatex().then((katex) => {
+      if (!alive) return;
+      setHtml(katex.renderToString(tex, { displayMode: !!block, throwOnError: false, errorColor: "#ff7a6b" }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [tex, block]);
+
+  if (html === null) {
+    /* Пока KaTeX грузится — показываем сырой TeX, чтобы не было «пустоты». */
+    return <span className={block ? "my-2 block font-mono text-[13px] text-chalk-300" : "font-mono text-[13px] text-chalk-300"}>{tex}</span>;
+  }
   return <span className={block ? "my-2 block overflow-x-auto" : undefined} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

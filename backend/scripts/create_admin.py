@@ -25,6 +25,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.models import User, UserRole
+from app.security import hash_password
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor"
@@ -34,11 +35,9 @@ SYNC_URL = DATABASE_URL.replace("+asyncpg", "").replace("postgresql://", "postgr
 
 
 def _hash(password: str) -> str:
-    """Хеширование пароля. В проде — bcrypt (passlib); здесь детерминированный
-    SHA-256, чтобы не тянуть зависимость в CLI. Замените при необходимости."""
-    import hashlib
-
-    return hashlib.sha256(password.encode()).hexdigest()
+    """bcrypt — единый алгоритм с API (app.security), чтобы аккаунт,
+    созданный через CLI, проходил проверку при входе."""
+    return hash_password(password)
 
 
 def main() -> None:

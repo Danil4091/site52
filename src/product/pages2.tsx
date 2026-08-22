@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowUpFromLine, Check, CheckCircle2, Copy, Crown, Download, FileJson, Flame,
   KeyRound, Link2, Medal, MinusCircle, Plus, Sparkles, Tag, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X, XCircle,
 } from "lucide-react";
-import {
-  Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from "recharts";
 import { useApp, type CustomTask } from "./store";
+
+/* recharts вынесен в отдельный ленивый чанк (AnalyticsChart.tsx) —
+   грузится параллельно и только при открытии «Аналитики». */
+const AnalyticsChart = lazy(() => import("./AnalyticsChart"));
 import { ACHIEVEMENTS, BANK, ERROR_TAGS, LEADER_SEED, REAL_VARIANT, type AchieveSnapshot, type AttemptRecord } from "./data";
 import { Avatar, Heatmap, LatexText, TitleBadge, levelFromXp } from "./ui";
 import VariantUploader from "./VariantUploader";
@@ -250,22 +251,15 @@ export function AnalyticsPage() {
               <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 border-t-2 border-dotted border-mark-blue" />средний по РФ · {RU_AVG_SCORE_2026}</span>
               <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 border-t-2 border-dashed border-mark-green/70" />порог · 70</span>
             </div>
-            <div className="mt-3 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={data} margin={{ top: 6, right: 4, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-board-700)" vertical={false} />
-                  <XAxis dataKey="variant" tickLine={false} axisLine={{ stroke: "var(--color-board-700)" }} tick={{ fontSize: 11, fill: "var(--color-chalk-500)" }} />
-                  <YAxis yAxisId="left" domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-chalk-500)" }} />
-                  <YAxis yAxisId="right" orientation="right" domain={[0, 5]} allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--color-chalk-500)" }} />
-                  <Tooltip contentStyle={{ backgroundColor: "var(--color-board-850)", border: "1px solid var(--color-board-600)", borderRadius: 10, fontSize: 12, color: "var(--color-chalk-200)" }} cursor={{ fill: "var(--color-board-800)" }} />
-                  <ReferenceLine yAxisId="left" y={70} stroke="var(--color-mark-green)" strokeOpacity={0.55} strokeDasharray="5 5" label={{ value: "порог 70", fill: "var(--color-mark-green)", fontSize: 9.5, position: "insideBottomLeft" }} />
-                  <ReferenceLine yAxisId="left" y={RU_AVG_SCORE_2026} stroke="var(--color-mark-blue)" strokeDasharray="2 4" label={{ value: `РФ · ${RU_AVG_SCORE_2026}`, fill: "var(--color-mark-blue)", fontSize: 9.5, position: "insideBottomRight" }} />
-                  <ReferenceLine yAxisId="left" y={goal} stroke="var(--color-mark-yellow)" strokeWidth={1.6} strokeDasharray="7 5" label={{ value: `ваша цель · ${goal}`, fill: "var(--color-mark-yellow)", fontSize: 10, position: "insideTopRight" }} />
-                  <Bar yAxisId="right" dataKey="mistakes" name="Ошибки 0.1" fill="var(--color-mark-red)" radius={[4, 4, 0, 0]} barSize={14} opacity={0.85} />
-                  <Line yAxisId="left" type="monotone" dataKey="secondary" name="Тестовый балл" stroke="var(--color-mark-green)" strokeWidth={2.5} dot={{ r: 3.5, fill: "var(--color-mark-green)", strokeWidth: 0 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
+            <Suspense
+              fallback={
+                <div className="mt-3 flex h-64 items-center justify-center rounded-lg border border-dashed border-board-700 text-[11px] font-semibold uppercase tracking-widest text-chalk-500">
+                  Строим график…
+                </div>
+              }
+            >
+              <AnalyticsChart data={data} goal={goal} />
+            </Suspense>
           </div>
 
           {/* детализация выбранной попытки: ошибки vs пропуски */}
