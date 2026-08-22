@@ -1,16 +1,35 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useApp } from "./product/store";
 import { Header, LiveTicker, MobileNav, Footer, Toasts } from "./product/shell";
 import { HomePage, BankPage, VariantsPage, RunPage, ResultsPage, ProbabilityPage } from "./product/pages";
-import { AnalyticsPage, RatingPage, MistakesPage, AdminPage } from "./product/pages2";
-import TrainerPage from "./product/TrainerPage";
-import PublishedVariantRunner from "./product/PublishedVariantRunner";
-import MarathonPage from "./product/MarathonPage";
 import { ConfettiBurst, FieldDockProvider } from "./product/ui";
 import AuthModal from "./product/AuthModal";
 import LegalModal, { type LegalDoc } from "./product/LegalDocs";
 import ForgotPasswordModal from "./product/ForgotPassword";
 import VkContactWidget from "./product/VkContactWidget";
+
+/* ── Ленивая загрузка: тяжёлые страницы (recharts, кабинеты, раннеры)
+      подгружаются только при открытии, а не вместе со стартом ── */
+const AnalyticsPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.AnalyticsPage })));
+const RatingPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.RatingPage })));
+const MistakesPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.MistakesPage })));
+const AdminPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.AdminPage })));
+const TrainerPage = lazy(() => import("./product/TrainerPage"));
+const PublishedVariantRunner = lazy(() => import("./product/PublishedVariantRunner"));
+const MarathonPage = lazy(() => import("./product/MarathonPage"));
+
+/** Фирменная заглушка на время подгрузки раздела. */
+function BoardLoader() {
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+      <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-mark-yellow/15 font-display text-2xl font-bold text-mark-yellow">
+        <span className="absolute inset-0 animate-ping rounded-2xl bg-mark-yellow/10 motion-reduce:animate-none" />
+        √
+      </span>
+      <p className="font-mono text-[11px] uppercase tracking-[0.25em] text-chalk-500">Загружаем доску…</p>
+    </div>
+  );
+}
 
 export default function App() {
   const { route, burst, runPublishedVariant } = useApp();
@@ -53,20 +72,22 @@ export default function App() {
         {route !== "run" && <LiveTicker />}
 
         <main key={route} className="page-in pb-24 md:pb-16">
-          {route === "home" && <HomePage />}
-          {route === "bank" && <BankPage />}
-          {route === "trainer" && <TrainerPage />}
-          {route === "variants" && <VariantsPage />}
-          {route === "variant-run" && <PublishedVariantRunner />}
-          {route === "marathon" && <MarathonPage />}
-          {route === "run" && <RunPage />}
-          {route === "results" && <ResultsPage />}
-          {route === "probability" && <ProbabilityPage />}
-          {route === "analytics" && <AnalyticsPage />}
-          {route === "rating" && <RatingPage />}
-          {route === "mistakes" && <MistakesPage />}
-          {route === "admin" && <AdminPage />}
-          {route === "achieve" && <RatingPage />}
+          <Suspense fallback={<BoardLoader />}>
+            {route === "home" && <HomePage />}
+            {route === "bank" && <BankPage />}
+            {route === "trainer" && <TrainerPage />}
+            {route === "variants" && <VariantsPage />}
+            {route === "variant-run" && <PublishedVariantRunner />}
+            {route === "marathon" && <MarathonPage />}
+            {route === "run" && <RunPage />}
+            {route === "results" && <ResultsPage />}
+            {route === "probability" && <ProbabilityPage />}
+            {route === "analytics" && <AnalyticsPage />}
+            {route === "rating" && <RatingPage />}
+            {route === "mistakes" && <MistakesPage />}
+            {route === "admin" && <AdminPage />}
+            {route === "achieve" && <RatingPage />}
+          </Suspense>
         </main>
 
         {/* Виджет обратной связи ВК — скрыт во время решения варианта и в кабинете */}
