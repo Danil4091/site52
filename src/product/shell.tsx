@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  BarChart3, BookOpenCheck, CalendarDays, ClipboardList, Eraser, Flame, Home,
+  BarChart3, BookOpenCheck, BookOpenText, CalendarDays, ClipboardList, Eraser, Flame, Home,
   Library, LogIn, LogOut, Moon, Settings, Sun, Trophy, UserRound,
 } from "lucide-react";
 import { useTheme } from "./theme";
@@ -13,6 +13,7 @@ const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", short: "Главная", icon: Home },
   { key: "bank", label: "Банк заданий", short: "Банк", icon: Library },
   { key: "variants", label: "Варианты", short: "Варианты", icon: ClipboardList },
+  { key: "materials", label: "Теория", short: "Теория", icon: BookOpenText },
   { key: "probability", label: "Вероятность", short: "Вероят.", icon: Flame },
   { key: "mistakes", label: "Ошибки", short: "Ошибки", icon: Eraser },
   { key: "rating", label: "Рейтинг", short: "Рейтинг", icon: Trophy },
@@ -25,6 +26,7 @@ const MOBILE_STUDENT: { key: Route; label: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", icon: Home },
   { key: "bank", label: "Банк", icon: Library },
   { key: "variants", label: "Варианты", icon: ClipboardList },
+  { key: "materials", label: "Теория", icon: BookOpenText },
   { key: "analytics", label: "Аналитика", icon: BarChart3 },
   { key: "rating", label: "Рейтинг", icon: Trophy },
 ];

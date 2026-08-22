@@ -51,7 +51,7 @@ export function readReferrals(code: string): string[] {
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
   | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
-  | "variant-run" | "marathon" | "assignment-run" | "profile";
+  | "variant-run" | "marathon" | "assignment-run" | "profile" | "materials";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system" | "homework"; title: string; body: string; time: string; read: boolean; assignmentId?: string; }
