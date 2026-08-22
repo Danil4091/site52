@@ -86,12 +86,20 @@ function read<T>(key: string, fallback: T): T {
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch { return fallback; }
 }
+/** Читает массив; при повреждённых/устаревших данных возвращает []. */
+function readArr<T>(key: string): T[] {
+  const v = read<unknown>(key, []);
+  return Array.isArray(v) ? (v as T[]) : [];
+}
 function write(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ок */ }
 }
 
 export function loadSession(): ProductUser | null {
-  return read<ProductUser | null>("komi-session-v1", null);
+  const u = read<ProductUser | null>("komi-session-v1", null);
+  /* старая/битая сессия без ника — сбрасываем, чтобы не было «@undefined» */
+  if (u && typeof u.nickname !== "string") return null;
+  return u;
 }
 export function saveSession(user: ProductUser | null) {
   try {
@@ -184,7 +192,27 @@ const Ctx = createContext<AppState | null>(null);
 const TASKBANK_KEY = "komi-taskbank-v1";
 const PUBLISHED_KEY = "komi-published-variants-v1";
 
+/* ── Версия схемы сохранённого состояния ─────────────────────────────
+   Если структура данных менялась (новые поля, другой формат), старые
+   записи в localStorage могут уронить приложение при чтении. При
+   несовпадении версии все komi-* ключи сбрасываются — приложение
+   стартует чистым вместо падения. Поднимайте VERSION при изменении
+   любых персист-структур. */
+const STATE_VERSION_KEY = "komi-state-version";
+const STATE_VERSION = "2026-02-v3";
+
+function ensureStateVersion() {
+  try {
+    if (localStorage.getItem(STATE_VERSION_KEY) === STATE_VERSION) return;
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith("komi-"))
+      .forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem(STATE_VERSION_KEY, STATE_VERSION);
+  } catch { /* приватный режим — ок */ }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  ensureStateVersion();
   const [user, setUser] = useState<ProductUser | null>(loadSession);
   const [route, setRoute] = useState<Route>("home");
   const [variantId, setVariantId] = useState("v-real-2023");
@@ -224,15 +252,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     justSwitched.current = true;
     const s = scope;
     const demo = s === "artom";
-    setAttempts(demo ? INITIAL_ATTEMPTS : read<AttemptRecord[]>(scoped("komi-attempts", s), []));
-    setMistakes(demo ? seedMistakes() : read<MistakeGroup[]>(scoped("komi-mistakes", s), []));
+    setAttempts(demo ? INITIAL_ATTEMPTS : readArr<AttemptRecord>(scoped("komi-attempts", s)));
+    setMistakes(demo ? seedMistakes() : readArr<MistakeGroup>(scoped("komi-mistakes", s)));
     setUnlocked(demo ? { "first-variant": Date.now() - 6 * 86_400_000, threshold: Date.now() - 4 * 86_400_000, "streak-3": Date.now() - 3 * 86_400_000 } : read<Record<string, number>>(scoped("komi-achievements", s), {}));
     setTopicStats(demo ? demoTopicStats() : read<Record<number, TopicStat>>(scoped("komi-topics", s), {}));
     setNightOwl(read<boolean>(scoped("komi-nightowl", s), false));
     setProbBestState(read<number>(scoped("komi-probbest", s), 0));
-    /* стрик: пропуск сжигает серию, если нет «страховки серии» (streak freeze) */
-    const st = read<StreakState>(scoped("komi-streak", s), { days: 0, best: 0, last: "", xp: 0, freezes: 0 });
-    st.freezes = st.freezes ?? 0;
+    /* стрик: пропуск сжигает серию, если нет «страховки серии» (streak freeze).
+       Поля дополняются значениями по умолчанию — старые/битые записи не валят приложение. */
+    const rawSt = read<Partial<StreakState>>(scoped("komi-streak", s), {});
+    const st: StreakState = {
+      days: typeof rawSt.days === "number" ? rawSt.days : 0,
+      best: typeof rawSt.best === "number" ? rawSt.best : 0,
+      last: typeof rawSt.last === "string" ? rawSt.last : "",
+      xp: typeof rawSt.xp === "number" ? rawSt.xp : 0,
+      freezes: typeof rawSt.freezes === "number" ? rawSt.freezes : 0,
+    };
     if (st.last && st.last !== dayIso() && st.last !== yesterdayIso()) {
       const missed = Math.max(0, Math.round((new Date(dayIso()).getTime() - new Date(st.last).getTime()) / 86_400_000) - 1);
       if (missed > 0 && st.freezes >= missed) {
