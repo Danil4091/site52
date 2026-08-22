@@ -4,15 +4,15 @@ import {
   Copy, Flame, GraduationCap, Send, Sparkles, Target, Trash2, Users, XCircle,
 } from "lucide-react";
 import { useApp } from "./store";
-import { BANK } from "./data";
-import { Avatar } from "./ui";
+import { BANK, REAL_VARIANT } from "./data";
+import { Avatar, LatexText } from "./ui";
 import {
   ensureDemoStudents, linkedStudentNicks, readStudentStats, timeAgo,
   type ActivityEntry, type StudentStats,
 } from "./teacherData";
 import {
   createAssignment, deleteAssignment, readAssignments,
-  type Assignment, type AssignmentKind,
+  type Assignment, type AssignmentKind, type PickedTask,
 } from "./assignments";
 
 /* ─────────────────── мини-столбчатая диаграмма баллов ─────────────────── */
@@ -272,13 +272,13 @@ export function AssignmentsPanel() {
           return (
             <div key={a.id} className="card p-4">
               <div className="flex flex-wrap items-center gap-3">
-                <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${a.kind === "variant" ? "bg-mark-blue/15 text-mark-blue" : "bg-mark-green/15 text-mark-green"}`}>
-                  {a.kind === "variant" ? <ClipboardList className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
+                <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${a.kind === "variant" ? "bg-mark-blue/15 text-mark-blue" : a.kind === "custom" ? "bg-mark-yellow/15 text-mark-yellow" : "bg-mark-green/15 text-mark-green"}`}>
+                  {a.kind === "variant" ? <ClipboardList className="h-5 w-5" /> : a.kind === "custom" ? <Sparkles className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-bold text-chalk-50">{a.title}</p>
                   <p className="text-[11px] text-chalk-500">
-                    {a.kind === "variant" ? "Вариант" : `Блок · №${a.topicNumber} · ${a.taskCount} задач`}
+                    {a.kind === "variant" ? "Вариант" : a.kind === "custom" ? `Свой набор · ${a.pickedTasks?.length ?? 0} задач(и)` : `Блок · №${a.topicNumber} · ${a.taskCount} задач`}
                     {a.deadline ? ` · до ${new Date(a.deadline).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}` : ""}
                   </p>
                 </div>
@@ -302,9 +302,9 @@ export function AssignmentsPanel() {
   );
 }
 
-/* ─────────────────── форма нового ДЗ ─────────────────── */
+/* ─────────────────── форма нового ДЗ (конструктор) ─────────────────── */
 function NewAssignmentModal({ students, onClose, onSent }: { students: string[]; onClose: () => void; onSent: () => void }) {
-  const { user, publishedVariants, pushToast } = useApp();
+  const { user, publishedVariants, taskBank, pushToast } = useApp();
   const [kind, setKind] = useState<AssignmentKind>("block");
   const [variantId, setVariantId] = useState("v-real-2023");
   const [topicNumber, setTopicNumber] = useState(4);
@@ -312,14 +312,37 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
   const [message, setMessage] = useState("");
   const [deadline, setDeadline] = useState("");
   const [sel, setSel] = useState<string[]>(students);
+  /* свой набор: выбранные из Банка задачи */
+  const [picked, setPicked] = useState<PickedTask[]>([]);
 
   const toggle = (n: string) => setSel((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
 
+  /* все задачи, которые можно выбрать из Банка (реальные + загруженные) */
+  const bankTasks = useMemo<PickedTask[]>(() => {
+    const real: PickedTask[] = REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
+      id: `bank-real-${t.number}`, number: t.number, topic: t.category,
+      statement: t.statement, answer: t.answer, solution: t.solution,
+    }));
+    const custom: PickedTask[] = taskBank
+      .filter((t) => !t.is_second_part)
+      .map((t) => ({
+        id: `bank-${t.id}`, number: t.task_number, topic: t.topic,
+        statement: t.condition_text, answer: t.correct_answer, solution: t.solution_text,
+      }));
+    return [...real, ...custom];
+  }, [taskBank]);
+
+  const toggleTask = (t: PickedTask) =>
+    setPicked((p) => (p.some((x) => x.id === t.id) ? p.filter((x) => x.id !== t.id) : [...p, t]));
+
   const send = () => {
     if (!sel.length) { pushToast("Выберите хотя бы одного ученика"); return; }
+    if (kind === "custom" && !picked.length) { pushToast("Отметьте хотя бы одну задачу из Банка"); return; }
     const title = kind === "variant"
       ? `Вариант: ${variantId === "v-real-2023" ? "Реальный вариант 2023 (ФИПИ)" : publishedVariants.find((v) => v.id === variantId)?.variantTitle ?? "Авторский вариант"}`
-      : `Блок задач · №${topicNumber} ${BANK.find((b) => b.number === topicNumber)?.topic ?? ""} (${taskCount} шт)`;
+      : kind === "custom"
+        ? `Свой набор · ${picked.length} задач(и)`
+        : `Блок задач · №${topicNumber} ${BANK.find((b) => b.number === topicNumber)?.topic ?? ""} (${taskCount} шт)`;
     createAssignment({
       fromNick: user?.nickname ?? "teacher",
       fromName: user?.name ?? "Артём",
@@ -327,6 +350,7 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
       variantId: kind === "variant" ? variantId : undefined,
       topicNumber: kind === "block" ? topicNumber : undefined,
       taskCount: kind === "block" ? taskCount : undefined,
+      pickedTasks: kind === "custom" ? picked : undefined,
       message: message.trim() || undefined,
       deadline: deadline ? new Date(deadline + "T23:59:59").getTime() : undefined,
       students: sel,
@@ -347,10 +371,10 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
         </div>
 
         {/* тип */}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {([["block", "Блок задач по теме", BookOpen], ["variant", "Целый вариант", ClipboardList]] as [AssignmentKind, string, typeof BookOpen][]).map(([k, l, I]) => (
-            <button key={k} onClick={() => setKind(k)} className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-[12.5px] font-bold transition-all ${kind === k ? "border-mark-yellow bg-mark-yellow/10 text-mark-yellow" : "border-board-600/70 text-chalk-400 hover:text-chalk-200"}`}>
-              <I className="h-4 w-4" />{l}
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {([["block", "Блок по теме", BookOpen], ["variant", "Целый вариант", ClipboardList], ["custom", "Свой набор", Sparkles]] as [AssignmentKind, string, typeof BookOpen][]).map(([k, l, I]) => (
+            <button key={k} onClick={() => setKind(k)} className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-[11.5px] font-bold transition-all ${kind === k ? "border-mark-yellow bg-mark-yellow/10 text-mark-yellow" : "border-board-600/70 text-chalk-400 hover:text-chalk-200"}`}>
+              <I className="h-4 w-4 shrink-0" />{l}
             </button>
           ))}
         </div>
@@ -376,6 +400,36 @@ function NewAssignmentModal({ students, onClose, onSent }: { students: string[];
               <select value={taskCount} onChange={(e) => setTaskCount(Number(e.target.value))} className={input}>
                 {[5, 10, 15].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
+            </div>
+          </div>
+        )}
+
+        {/* свой набор: выбор задач из Банка */}
+        {kind === "custom" && (
+          <div className="mt-3">
+            <label className={label}>Задачи из Банка · выбрано {picked.length}</label>
+            <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border border-board-600/50 bg-board-950/40 p-2.5">
+              {bankTasks.map((t) => {
+                const on = picked.some((x) => x.id === t.id);
+                return (
+                  <button key={t.id} onClick={() => toggleTask(t)}
+                    className={`flex w-full items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-all ${on ? "border-mark-green/50 bg-mark-green/8" : "border-board-700/50 hover:border-board-600"}`}>
+                    <span className={`mt-0.5 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border ${on ? "border-mark-green bg-mark-green text-board-950" : "border-chalk-500/50"}`}>
+                      {on && <CheckCircle2 className="h-3.5 w-3.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <b className="font-mono text-[11px] text-mark-yellow">№{t.number}</b>
+                        <span className="text-[11px] font-bold text-chalk-300">{t.topic}</span>
+                      </span>
+                      <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-chalk-500">
+                        <LatexText text={t.statement} />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              {bankTasks.length === 0 && <p className="px-2 py-4 text-center text-[12px] text-chalk-500">В Банке пока нет задач с автопроверкой.</p>}
             </div>
           </div>
         )}

@@ -26,17 +26,31 @@ export const VARIANTS: ProductVariant[] = [
   { id: "v-probe-7", year: 2026, title: "Пробник платформы №7", region: "авторский · Репетитор из Коми", difficulty: "сложный" },
 ];
 
+/** Исход одного задания в попытке. */
+export type TaskOutcome = "correct" | "incorrect" | "skipped";
+
 export interface AttemptRecord {
   id: number | string; variantId: string; label: string;
   secondary: number; mistakes: number; date: string;
   ts?: number; // unix-время попытки — для еженедельного отчёта
+  /** Разбивка по заданиям части 1: номер → исход. Для детализации в аналитике. */
+  taskResults?: Record<number, TaskOutcome>;
 }
 
 const _d = (days: number) => Date.now() - days * 86_400_000;
 export const INITIAL_ATTEMPTS: AttemptRecord[] = [
-  { id: 1, variantId: "v-2022-res", label: "Резервный 2022", secondary: 74, mistakes: 2, date: "12 мая", ts: _d(9) },
-  { id: 2, variantId: "v-2023-main", label: "Основной 2023", secondary: 79, mistakes: 1, date: "15 мая", ts: _d(5) },
-  { id: 3, variantId: "v-2023-dv", label: "Досрочный 2023 · ДВ", secondary: 84, mistakes: 1, date: "18 мая", ts: _d(1) },
+  {
+    id: 1, variantId: "v-2022-res", label: "Резервный 2022", secondary: 74, mistakes: 2, date: "12 мая", ts: _d(9),
+    taskResults: { 1: "correct", 2: "correct", 3: "correct", 4: "incorrect", 5: "correct", 6: "correct", 7: "correct", 8: "incorrect", 9: "correct", 10: "correct", 11: "skipped", 12: "correct" },
+  },
+  {
+    id: 2, variantId: "v-2023-main", label: "Основной 2023", secondary: 79, mistakes: 1, date: "15 мая", ts: _d(5),
+    taskResults: { 1: "correct", 2: "correct", 3: "correct", 4: "correct", 5: "correct", 6: "incorrect", 7: "correct", 8: "correct", 9: "correct", 10: "correct", 11: "correct", 12: "skipped" },
+  },
+  {
+    id: 3, variantId: "v-2023-dv", label: "Досрочный 2023 · ДВ", secondary: 84, mistakes: 1, date: "18 мая", ts: _d(1),
+    taskResults: { 1: "correct", 2: "correct", 3: "correct", 4: "correct", 5: "correct", 6: "correct", 7: "correct", 8: "correct", 9: "correct", 10: "incorrect", 11: "correct", 12: "correct" },
+  },
 ];
 
 export const SCALE: Record<number, number> = {

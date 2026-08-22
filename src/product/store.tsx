@@ -491,7 +491,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     registerSolve();
 
-    const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort(), ts: Date.now() };
+    /* разбивка по заданиям — для детализации «ошибка vs пропуск» в аналитике */
+    const taskResults: Record<number, "correct" | "incorrect" | "skipped"> = {};
+    for (const r of rows) taskResults[r.number] = r.status;
+
+    const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort(), ts: Date.now(), taskResults };
     const bestBefore = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
     setAttempts((a) => [...a, newAttempt]);
     if (secondary > bestBefore) {

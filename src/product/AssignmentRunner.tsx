@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, XCircle } from "lucide-react";
 import { useApp } from "./store";
 import { PROB_PROBLEMS, REAL_VARIANT, SCALE, answersMatch } from "./data";
-import { getAssignment } from "./assignments";
+import { getAssignment, type PickedTask } from "./assignments";
 import { AnswerInput, LatexText } from "./ui";
 
 interface HwProblem {
@@ -14,8 +14,14 @@ interface HwProblem {
   solution?: string;
 }
 
-/** Собрать список задач для ДЗ (вариант или блок по теме). */
-function buildProblems(kind: "variant" | "block", variantId?: string, topicNumber?: number, taskCount?: number): HwProblem[] {
+/** Собрать список задач для ДЗ (вариант, блок по теме или свой набор). */
+function buildProblems(kind: "variant" | "block" | "custom", variantId?: string, topicNumber?: number, taskCount?: number, picked?: PickedTask[]): HwProblem[] {
+  if (kind === "custom") {
+    return (picked ?? []).map((p) => ({
+      id: p.id, number: p.number, topic: p.topic,
+      statement: p.statement, answer: p.answer ?? "", solution: p.solution,
+    }));
+  }
   if (kind === "variant") {
     if (variantId === "v-real-2023") {
       return REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
@@ -53,7 +59,7 @@ export default function AssignmentRunner() {
         }));
       }
     }
-    return buildProblems(assignment.kind, assignment.variantId, assignment.topicNumber, assignment.taskCount);
+    return buildProblems(assignment.kind, assignment.variantId, assignment.topicNumber, assignment.taskCount, assignment.pickedTasks);
   }, [assignment, publishedVariants]);
 
   const [answers, setAnswers] = useState<Record<string, string>>({});

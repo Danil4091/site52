@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowUpFromLine, Check, Copy, Crown, Download, FileJson, Flame,
-  KeyRound, Link2, Medal, Plus, Sparkles, Tag, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X,
+  AlertTriangle, ArrowUpFromLine, Check, CheckCircle2, Copy, Crown, Download, FileJson, Flame,
+  KeyRound, Link2, Medal, MinusCircle, Plus, Sparkles, Tag, Target, Trash2, TrendingDown, TrendingUp, Upload, Users, X, XCircle,
 } from "lucide-react";
 import {
   Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useApp, type CustomTask } from "./store";
-import { ACHIEVEMENTS, BANK, ERROR_TAGS, LEADER_SEED, type AchieveSnapshot } from "./data";
+import { ACHIEVEMENTS, BANK, ERROR_TAGS, LEADER_SEED, REAL_VARIANT, type AchieveSnapshot, type AttemptRecord } from "./data";
 import { Avatar, Heatmap, LatexText, TitleBadge, levelFromXp } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
@@ -79,6 +79,89 @@ function WeeklyReport() {
   );
 }
 
+/* ═══════════════════════ РАЗБОР ПОПЫТКИ ПО ЗАДАНИЯМ ═══════════════════════ */
+/* Детализация: какие задания решены верно, где ошибка (неверный ответ),
+   а какие пропущены (ученик не знает, как решать). */
+function AttemptBreakdown({ attempt }: { attempt: AttemptRecord }) {
+  const topicByNumber = useMemo(
+    () => new Map(REAL_VARIANT.map((t) => [t.number, t.category])),
+    []
+  );
+  const res = attempt.taskResults ?? {};
+  const numbers = Array.from({ length: 12 }, (_, i) => i + 1);
+  const wrong = numbers.filter((n) => res[n] === "incorrect");
+  const skipped = numbers.filter((n) => res[n] === "skipped");
+  const correct = numbers.filter((n) => res[n] === "correct");
+
+  const cellCls = (n: number) => {
+    const s = res[n];
+    if (s === "correct") return "border-mark-green/50 bg-mark-green/12 text-mark-green";
+    if (s === "incorrect") return "border-mark-red/50 bg-mark-red/12 text-mark-red";
+    return "border-dashed border-chalk-500/50 bg-transparent text-chalk-500";
+  };
+
+  const Row = ({ nums, icon: Icon, tone, label, empty }: {
+    nums: number[]; icon: typeof XCircle; tone: string; label: string; empty: string;
+  }) => (
+    <div className="rounded-lg border border-board-700/60 bg-board-950/40 p-3.5">
+      <p className={`flex items-center gap-2 text-[12px] font-bold ${tone}`}>
+        <Icon className="h-4 w-4" />
+        {label}
+        <span className="ml-auto rounded-md bg-board-800/80 px-2 py-0.5 font-mono text-[11px] tabular-nums">{nums.length}</span>
+      </p>
+      {nums.length === 0 ? (
+        <p className="mt-2 text-[11.5px] text-chalk-500">{empty}</p>
+      ) : (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {nums.map((n) => (
+            <span key={n} className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold ${
+              res[n] === "incorrect" ? "border-mark-red/40 bg-mark-red/8 text-mark-red" : "border-chalk-500/40 bg-board-800/60 text-chalk-300"
+            }`}>
+              <b className="font-mono">№{n}</b>
+              <span className="text-chalk-500">{topicByNumber.get(n) ?? ""}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* сетка исходов по номерам */}
+      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">
+        {numbers.map((n) => (
+          <div key={n} title={`№${n} · ${topicByNumber.get(n) ?? ""}`}
+            className={`flex h-11 flex-col items-center justify-center rounded-md border transition-transform duration-150 hover:-translate-y-0.5 ${cellCls(n)}`}>
+            <span className="font-mono text-[12px] font-bold leading-none">{n}</span>
+            <span className="mt-0.5 text-[8px] font-semibold uppercase tracking-wide opacity-70">
+              {res[n] === "correct" ? "✓" : res[n] === "incorrect" ? "✗" : "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] font-semibold text-chalk-500">
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-mark-green/50 bg-mark-green/12" />верно · {correct.length}</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-mark-red/50 bg-mark-red/12" />ошибка · {wrong.length}</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed border-chalk-500/50" />пропуск · {skipped.length}</span>
+      </div>
+
+      {/* списки: ошибки vs пропуски */}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Row nums={wrong} icon={XCircle} tone="text-mark-red" label="Ошибки — неверный ответ" empty="Ни одной ошибки — все введённые ответы верны." />
+        <Row nums={skipped} icon={MinusCircle} tone="text-chalk-400" label="Пропуски — не решено" empty="Пропусков нет — попытка была на все задания." />
+      </div>
+
+      {skipped.length > 0 && (
+        <p className="mt-3 flex items-start gap-2 rounded-lg border border-mark-yellow/30 bg-mark-yellow/6 p-3 text-[11.5px] leading-relaxed text-chalk-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mark-yellow" />
+          Пропуск — сигнал «не знаю, как решать». Откройте тренажёр по этим темам из Банка заданий: там есть разбор каждой задачи.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════════════ АНАЛИТИКА ═══════════════════════ */
 export function AnalyticsPage() {
   const { attempts, topicStats, user, patchUser } = useApp();
@@ -89,6 +172,11 @@ export function AnalyticsPage() {
   const mistakes3 = attempts.slice(-3).reduce((s, a) => s + a.mistakes, 0);
   const goal = user?.goal ?? 80;
   const toGoal = latest ? goal - latest.secondary : null;
+  /* выбранная попытка для детализации (по умолчанию — последняя) */
+  const [selectedIdx, setSelectedIdx] = useState(attempts.length - 1);
+  const selAttempt = attempts[Math.min(Math.max(selectedIdx, 0), attempts.length - 1)];
+  /* при новой попытке — переключаемся на неё */
+  useEffect(() => { setSelectedIdx(attempts.length - 1); }, [attempts.length]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-5">
@@ -125,6 +213,22 @@ export function AnalyticsPage() {
           <div className="rise rise-3 card mt-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-sm font-bold text-chalk-50">Динамика баллов и «ошибок 0.1»</h2>
+              {/* выбор попытки для детализации */}
+              {attempts.length > 1 && (
+                <div className="flex items-center gap-1">
+                  <span className="tick mr-1">Попытка</span>
+                  {attempts.map((a, i) => (
+                    <button key={a.id} onClick={() => setSelectedIdx(i)}
+                      className={`rounded-md px-2 py-1 font-mono text-[11px] font-bold transition-all active:scale-90 ${
+                        i === Math.min(Math.max(selectedIdx, 0), attempts.length - 1)
+                          ? "bg-mark-yellow text-board-950"
+                          : "bg-board-800/60 text-chalk-400 hover:bg-board-700 hover:text-chalk-200"
+                      }`}
+                      title={a.label}
+                    >П{i + 1}</button>
+                  ))}
+                </div>
+              )}
               {/* редактор цели */}
               <div className="flex items-center gap-2">
                 <span className="tick">Ваша цель</span>
@@ -164,7 +268,22 @@ export function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="rise rise-4 card mt-4 p-5">
+          {/* детализация выбранной попытки: ошибки vs пропуски */}
+          {selAttempt && (
+            <div className="rise rise-4 card mt-4 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-sm font-bold text-chalk-50">
+                  Разбор попытки <span className="text-mark-yellow">П{Math.min(Math.max(selectedIdx, 0), attempts.length - 1) + 1}</span>
+                  <span className="ml-2 text-[11px] font-semibold text-chalk-500">{selAttempt.label} · {selAttempt.secondary} баллов</span>
+                </h2>
+              </div>
+              <div className="mt-3">
+                <AttemptBreakdown attempt={selAttempt} />
+              </div>
+            </div>
+          )}
+
+          <div className="rise rise-5 card mt-4 p-5">
             <h2 className="mb-3 font-display text-sm font-bold text-chalk-50">Тепловая карта номеров ЕГЭ · % успешных решений</h2>
             <Heatmap stats={topicStats} />
           </div>

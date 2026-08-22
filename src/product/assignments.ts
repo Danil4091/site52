@@ -6,8 +6,18 @@
    в продакшене — БД по teacher_id / student_id).
    ══════════════════════════════════════════════════════════════════ */
 
-export type AssignmentKind = "variant" | "block";
+export type AssignmentKind = "variant" | "block" | "custom";
 export type AssignmentStatus = "new" | "opened" | "done";
+
+/** Задача, выбранная преподавателем из Банка для custom-набора. */
+export interface PickedTask {
+  id: string;
+  number: number;
+  topic: string;
+  statement: string;
+  answer?: string | null;
+  solution?: string;
+}
 
 export interface AssignmentTarget {
   nick: string;
@@ -27,6 +37,8 @@ export interface Assignment {
   /** Для kind === "block": номер темы (1–12) и количество задач. */
   topicNumber?: number;
   taskCount?: number;
+  /** Для kind === "custom": конкретные задачи, выбранные из Банка. */
+  pickedTasks?: PickedTask[];
   message?: string;
   deadline?: number;
   createdAt: number;
