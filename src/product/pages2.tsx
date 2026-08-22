@@ -12,6 +12,7 @@ import { Avatar, Heatmap, LatexText, TitleBadge, levelFromXp } from "./ui";
 import VariantUploader from "./VariantUploader";
 import { variantLink } from "./variantSchema";
 import { RU_AVG_SCORE_2026 } from "./config";
+import TeacherDashboard, { AssignmentsPanel } from "./TeacherDashboard";
 
 /* ═══════════════════════ ЕЖЕНЕДЕЛЬНЫЙ ОТЧЁТ ═══════════════════════ */
 function WeeklyReport() {
@@ -469,7 +470,7 @@ function validateImport(raw: string): { ok: CustomTask[]; errors: { row: number;
 export function AdminPage() {
   const { user, taskBank, addTask, removeTask, importTasks, pushToast, publishedVariants, unpublishVariant, runPublishedVariant } = useApp();
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("komi-admin") === "1");
-  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students">("bank");
+  const [tab, setTab] = useState<"bank" | "import" | "variants" | "students" | "hw">("students");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [importText, setImportText] = useState("");
@@ -549,7 +550,7 @@ export function AdminPage() {
       <h1 className="rise rise-1 mt-2 font-display text-3xl font-bold tracking-tight text-chalk-50 sm:text-4xl">{user?.name ?? "Администратор"}</h1>
 
       <div className="rise rise-2 mt-6 flex flex-wrap gap-1.5">
-        {([["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"], ["students", "Ученики"]] as ["bank" | "import" | "variants" | "students", string][]).map(([k, l]) => (
+        {([["students", "Ученики"], ["hw", "Домашние задания"], ["bank", "Банк задач"], ["import", "Импорт JSON"], ["variants", "Варианты"]] as ["bank" | "import" | "variants" | "students" | "hw", string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${tab === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {l}
@@ -699,42 +700,15 @@ export function AdminPage() {
       )}
 
       {tab === "students" && (
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <div className="card p-5">
-            <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50"><Link2 className="h-4 w-4 text-mark-yellow" />Коды приглашений</h2>
-            <ul className="mt-3 space-y-2.5">
-              {[{ code: "KOMI-2026", label: "Основной набор", used: 14 }, { code: "PROBNIK-7", label: "Пробник №7", used: 6 }].map((c) => (
-                <li key={c.code} className="flex items-center gap-3 rounded-lg border border-board-600/40 bg-board-950/40 px-3 py-2.5">
-                  <span className="font-mono text-[13px] font-bold tracking-wider text-mark-yellow">{c.code}</span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-chalk-500">{c.label} · {c.used} учеников</span>
-                  <button onClick={() => { navigator.clipboard?.writeText(`${location.origin}${location.pathname}?invite=${c.code}`); pushToast(`Ссылка ${c.code} скопирована`); }}
-                    className="btn-ghost px-2.5 py-1.5 text-[11px]"><Copy className="h-3 w-3" />Ссылка</button>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="card p-5">
-            <h2 className="flex items-center gap-2 font-display text-sm font-bold text-chalk-50"><Users className="h-4 w-4 text-mark-green" />Мои ученики</h2>
-            {linkedStudents.length === 0 ? (
-              <p className="mt-3 text-[12px] leading-relaxed text-chalk-500">
-                Пока никто не привязался. Отправьте ученикам код <b className="font-mono text-mark-yellow">{myCode || "—"}</b> — после регистрации с этим кодом их ники появятся здесь.
-              </p>
-            ) : (
-              <ul className="mt-3 divide-y divide-board-700/60">
-                {linkedStudents.map((s) => (
-                  <li key={s.nickname} className="card-hover flex items-center gap-3 py-3">
-                    <Avatar name={s.nickname} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-[13px] font-bold text-chalk-50">@{s.nickname}</p>
-                      <p className="text-[10.5px] text-chalk-500">привязан по коду {myCode}</p>
-                    </div>
-                    <span className="rounded-lg bg-mark-green/12 px-2.5 py-1 text-[11px] font-bold text-mark-green">активен</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-3 flex items-center gap-2 text-[11px] text-chalk-500"><Sparkles className="h-3.5 w-3.5 text-mark-yellow" />В продакшене список берётся из БД по teacher_id, включая telegram_id учеников.</p>
-          </div>
+        <div className="mt-5">
+          <TeacherDashboard />
+          <p className="mt-4 flex items-center gap-2 text-[11px] text-chalk-600"><Sparkles className="h-3.5 w-3.5 text-mark-yellow" />В продакшене статистика берётся из БД по teacher_id; здесь — из локального хранилища учеников, зарегистрированных по вашему коду.</p>
+        </div>
+      )}
+
+      {tab === "hw" && (
+        <div className="mt-5">
+          <AssignmentsPanel />
         </div>
       )}
     </div>

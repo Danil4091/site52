@@ -8,6 +8,7 @@ import {
   makeLinkCode, resolveTeacher,
   type ParsedVariant, type PublishedVariant,
 } from "./variantSchema";
+import { getForStudent, getAssignment, setStatus } from "./assignments";
 
 export interface ProductUser {
   /** Ник — единственный публичный идентификатор (виден в рейтинге). */
@@ -50,10 +51,10 @@ export function readReferrals(code: string): string[] {
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
   | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
-  | "variant-run" | "marathon";
+  | "variant-run" | "marathon" | "assignment-run";
 
 export interface TopicStat { solved: number; attempts: number; }
-export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system"; title: string; body: string; time: string; read: boolean; }
+export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system" | "homework"; title: string; body: string; time: string; read: boolean; assignmentId?: string; }
 export interface Toast { id: number; msg: string; }
 
 /* Задача банка — формат совпадает с API и JSON-импортом. */
@@ -159,6 +160,11 @@ interface AppState {
   freezesBought: number;
   inviteCode: string;
 
+  /* домашние задания от преподавателя */
+  activeAssignmentId: string | null;
+  openAssignment: (id: string) => void;
+  completeAssignment: (id: string, score: number) => void;
+
   go: (r: Route) => void;
   login: (u: ProductUser) => void;
   logout: () => void;
@@ -246,6 +252,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [tagsAssigned, setTagsAssigned] = useState(0);
   const [tagStats, setTagStats] = useState<Record<string, number>>({});
   const [freezesBought, setFreezesBought] = useState(0);
+  const [activeAssignmentId, setActiveAssignmentId] = useState<string | null>(null);
 
   /* загрузка данных при смене пользователя — демо-набор только у «artom» */
   useEffect(() => {
@@ -659,6 +666,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addNotif({ type: "system", title: "Страховка серии ❄", body: "Один пропущенный день больше не сожжёт серию. Заморозка сработает автоматически." });
   }, [streak.xp, pushToast, addNotif]);
 
+  /* ── домашние задания от преподавателя ── */
+  const openAssignment = useCallback((id: string) => {
+    if (!user) return;
+    setStatus(id, user.nickname, "opened");
+    setActiveAssignmentId(id);
+    setRoute("assignment-run");
+    window.scrollTo({ top: 0 });
+  }, [user]);
+
+  const completeAssignment = useCallback((id: string, score: number) => {
+    if (!user) return;
+    setStatus(id, user.nickname, "done", score);
+    setActiveAssignmentId(null);
+    pushToast(`ДЗ выполнено · ${score} баллов`);
+    setRoute("results");
+    window.scrollTo({ top: 0 });
+  }, [user, pushToast]);
+
+  /* авто-уведомления о новых ДЗ при входе ученика */
+  useEffect(() => {
+    if (!user || user.role !== "student") return;
+    const fresh = getForStudent(user.nickname).filter((a) => a.targets.some((t) => t.nick === user.nickname && t.status === "new"));
+    const notified = read<string[]>(scoped("komi-hw-notified", scope), []);
+    fresh.filter((a) => !notified.includes(a.id)).forEach((a) => {
+      addNotif({
+        type: "homework",
+        title: "📚 ДЗ от репетитора",
+        body: `${a.title}${a.message ? " — " + a.message : ""}`,
+        assignmentId: a.id,
+      });
+    });
+    write(scoped("komi-hw-notified", scope), [...notified, ...fresh.map((a) => a.id)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
+
   const importTasks = useCallback((list: CustomTask[]) => {
     let added = 0, skipped = 0;
     setTaskBank((prev) => {
@@ -684,6 +726,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     publishedVariants, activeVariant, publishVariant, unpublishVariant, runPublishedVariant, attachTeacher, recordPublishedAttempt,
     marathonCount, marathonBest, referrals, tagsAssigned, tagStats, recordMarathon, assignTag, buyFreeze, freezesBought,
     inviteCode: user ? makeInviteCode(user.nickname) : "",
+    activeAssignmentId, openAssignment, completeAssignment,
     go, login, logout, patchUser, pushToast, addNotif,
     markAllRead: () => setNotifs((prev) => prev.map((n) => ({ ...n, read: true }))),
     startVariant, submitExam, toggleResolved, recordAnswer, setProbBest, deleteAccount, collectExport,

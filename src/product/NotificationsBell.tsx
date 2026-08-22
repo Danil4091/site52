@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, CalendarClock, CheckCheck, Info, Trophy, Zap } from "lucide-react";
+import { Bell, BookOpen, CalendarClock, CheckCheck, Info, Trophy, Zap } from "lucide-react";
 import { useApp, type NotifItem } from "./store";
 
 const ICONS: Record<NotifItem["type"], { icon: typeof Bell; cls: string }> = {
@@ -7,10 +7,11 @@ const ICONS: Record<NotifItem["type"], { icon: typeof Bell; cls: string }> = {
   lesson: { icon: CalendarClock, cls: "bg-mark-green/15 text-mark-green" },
   feed: { icon: Zap, cls: "bg-mark-blue/15 text-mark-blue" },
   system: { icon: Info, cls: "bg-board-700 text-chalk-300" },
+  homework: { icon: BookOpen, cls: "bg-mark-pink/15 text-mark-pink" },
 };
 
 export function NotificationsBell() {
-  const { notifs, markAllRead } = useApp();
+  const { notifs, markAllRead, openAssignment } = useApp();
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const unread = notifs.filter((i) => !i.read).length;
@@ -49,8 +50,11 @@ export function NotificationsBell() {
             {notifs.map((n) => {
               const meta = ICONS[n.type];
               const Icon = meta.icon;
+              const clickable = !!n.assignmentId;
               return (
-                <li key={n.id} className={`flex gap-3 px-4 py-3 transition-colors duration-200 hover:bg-board-800 ${n.read ? "" : "bg-board-800/50"}`}>
+                <li key={n.id}
+                  onClick={() => { if (n.assignmentId) { openAssignment(n.assignmentId); setOpen(false); } }}
+                  className={`flex gap-3 px-4 py-3 transition-colors duration-200 hover:bg-board-800 ${n.read ? "" : "bg-board-800/50"} ${clickable ? "cursor-pointer" : ""}`}>
                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.cls}`}><Icon className="h-4 w-4" /></span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -58,7 +62,9 @@ export function NotificationsBell() {
                       {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-yellow" />}
                     </div>
                     <p className="mt-0.5 text-[11.5px] leading-relaxed text-chalk-400">{n.body}</p>
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-chalk-600">{n.time}</p>
+                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-chalk-600">
+                      {n.time}{clickable ? " · нажмите, чтобы открыть" : ""}
+                    </p>
                   </div>
                 </li>
               );

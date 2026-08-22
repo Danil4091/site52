@@ -17,6 +17,8 @@ const AdminPage = lazy(() => import("./product/pages2").then((m) => ({ default: 
 const TrainerPage = lazy(() => import("./product/TrainerPage"));
 const PublishedVariantRunner = lazy(() => import("./product/PublishedVariantRunner"));
 const MarathonPage = lazy(() => import("./product/MarathonPage"));
+const TeacherDashboard = lazy(() => import("./product/TeacherDashboard"));
+const AssignmentRunner = lazy(() => import("./product/AssignmentRunner"));
 
 /** Фирменная заглушка на время подгрузки раздела. */
 function BoardLoader() {
@@ -79,6 +81,7 @@ export default function App() {
             {route === "variants" && <VariantsPage />}
             {route === "variant-run" && <PublishedVariantRunner />}
             {route === "marathon" && <MarathonPage />}
+            {route === "assignment-run" && <AssignmentRunner />}
             {route === "run" && <RunPage />}
             {route === "results" && <ResultsPage />}
             {route === "probability" && <ProbabilityPage />}
