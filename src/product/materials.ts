@@ -244,7 +244,13 @@ export function addMaterial(m: Omit<StudyMaterial, "id" | "downloads" | "addedAt
   try {
     localStorage.setItem(KEY, JSON.stringify([full, ...list]));
   } catch {
-    throw new Error("Файл слишком большой для локального хранилища (лимит ~2.5 МБ). В боевом режиме файл уйдёт на сервер.");
+    throw new Error("Файл слишком большой для локального хранилища (лимит ~2.5 МБ). Используйте прямую ссылку или боевой режим — там файл уйдёт на сервер.");
+  }
+  /* Проверяем, что запись реально сохранилась (иначе при скачивании будет «мусор»). */
+  const saved = readUserMaterials().find((x) => x.id === full.id);
+  if (!saved || (!!full.fileData && !saved.fileData)) {
+    try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* откат */ }
+    throw new Error("Файл не поместился в хранилище браузера. Используйте прямую ссылку на PDF или боевой режим.");
   }
   return full;
 }
@@ -265,15 +271,73 @@ export function bumpDownload(id: string): void {
 
 /* ─────────────────── скачивание ─────────────────── */
 
-/** Прямое скачивание загруженного файла (data-URL или ссылка). */
-export function downloadFile(m: StudyMaterial): void {
-  const a = document.createElement("a");
-  a.href = m.fileData ?? m.fileUrl ?? "";
-  a.download = m.fileName ?? `${m.title.replace(/[^\wа-яёА-ЯЁ0-9]+/g, "_")}.pdf`;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+/** data:application/pdf;base64,… → Blob (надёжнее, чем href=dataURL для больших файлов). */
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const m = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (!m) return null;
+  const mime = m[1] || "application/octet-stream";
+  if (m[2]) {
+    try {
+      const bin = atob(m[3]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    } catch {
+      return null;
+    }
+  }
+  return new Blob([decodeURIComponent(m[3])], { type: mime });
+}
+
+/**
+ * Скачивание методички. Возвращает, что именно скачано:
+ *  "file" — PDF из data-URL; "url" — переход по прямой ссылке; "none" — файла нет.
+ * Больше никогда не скачивает «мусор»: при отсутствии файла возвращает "none".
+ */
+export function downloadFile(m: StudyMaterial): "file" | "url" | "none" {
+  const name = m.fileName ?? `${m.title.replace(/[^\wа-яёА-ЯЁ0-9]+/g, "_") || "metodichka"}.pdf`;
+
+  if (m.fileData) {
+    const blob = dataUrlToBlob(m.fileData);
+    if (blob && blob.size > 0) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      return "file";
+    }
+    return "none"; // битый data-URL — не скачиваем мусор
+  }
+
+  if (m.fileUrl) {
+    const a = document.createElement("a");
+    a.href = m.fileUrl;
+    a.download = name;
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return "url";
+  }
+
+  return "none";
+}
+
+/** Открывает печатную версию демо-материала в новом окне (для «Сохранить как PDF»). */
+export function printMaterialInNewWindow(m: StudyMaterial): void {
+  const w = window.open("", "_blank", "width=900,height=1100");
+  if (!w) return;
+  w.document.open();
+  w.document.write(materialPrintHtml(m));
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
 }
 
 /** Печатный HTML-документ для демо-материала (сохраняется как PDF через диалог печати). */

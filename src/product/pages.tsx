@@ -328,10 +328,13 @@ function TaskOfDayBlock({ task }: { task: DailyTask }) {
           {verdict ? "Верно! +10 XP" : "Мимо. Решение ниже — разберитесь и закройте."}
         </p>
       )}
-      <button onClick={() => setRevealed((r) => !r)} className="mt-2 text-[11.5px] font-bold text-mark-blue transition-colors hover:text-chalk-50">
-        {revealed ? "Скрыть решение" : "Показать решение"}
-      </button>
-      {revealed && task.explain && (
+      {/* Разбор доступен только после отправки ответа — иначе это подсказка. */}
+      {verdict !== null && (
+        <button onClick={() => setRevealed((r) => !r)} className="mt-2 text-[11.5px] font-bold text-mark-blue transition-colors hover:text-chalk-50">
+          {revealed ? "Скрыть решение" : "Показать решение"}
+        </button>
+      )}
+      {verdict !== null && revealed && task.explain && (
         <p className="pop-in mt-1.5 rounded-lg border border-mark-yellow/25 bg-mark-yellow/5 p-2.5 text-[12px] leading-relaxed text-chalk-300">
           <LatexText text={task.explain} />
         </p>
@@ -664,7 +667,7 @@ export function RunPage() {
           </div>
         )}
 
-        {revealed[task.number] && task.solution && (
+        {review && revealed[task.number] && task.solution && (
           <div className="pop-in mt-4 rounded-lg border border-mark-yellow/30 bg-mark-yellow/5 p-4">
             <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-mark-yellow"><Lightbulb className="h-3.5 w-3.5" />{task.part === 2 ? "Критерии и разбор" : "Разбор"}</p>
             {task.criteria && <p className="mb-1.5 text-[12px] text-mark-blue">{task.criteria}</p>}
@@ -816,12 +819,15 @@ export function ProbabilityPage() {
                 />
                 <div className="mt-2 flex gap-2">
                   <button onClick={() => check(p.id, p.answer)} className="btn-gold px-4 py-2 text-[12.5px]">Проверить</button>
-                  <button onClick={() => setRevealed((r) => ({ ...r, [p.id]: !r[p.id] }))} className="btn-ghost px-3.5 py-2 text-[12px]">
-                    <Eye className="h-3.5 w-3.5" /> {revealed[p.id] ? "Скрыть" : "Показать решение"}
-                  </button>
+                  {/* Разбор — только после проверки ответа (иначе это подсказка). */}
+                  {v !== undefined && (
+                    <button onClick={() => setRevealed((r) => ({ ...r, [p.id]: !r[p.id] }))} className="btn-ghost px-3.5 py-2 text-[12px]">
+                      <Eye className="h-3.5 w-3.5" /> {revealed[p.id] ? "Скрыть" : "Показать решение"}
+                    </button>
+                  )}
                 </div>
               </div>
-              {revealed[p.id] && (
+              {v !== undefined && revealed[p.id] && (
                 <p className="pop-in mt-3 rounded-lg border border-mark-yellow/25 bg-mark-yellow/5 p-3 text-[12.5px] leading-relaxed text-chalk-200">
                   <b className="text-mark-yellow">Ответ: {p.answer.replace(".", ",")}.</b> <LatexText text={p.explain} />
                 </p>

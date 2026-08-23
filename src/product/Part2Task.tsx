@@ -125,10 +125,13 @@ export default function Part2Task({ task }: { task: VariantTaskDef }) {
               </>
             )}
           </button>
-          <button onClick={() => setShowSolution((s) => !s)} className="btn-ghost flex-1 justify-center py-3 text-[13.5px]">
-            {showSolution ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            {showSolution ? "Скрыть эталон" : "Посмотреть эталонное решение"}
-          </button>
+          {/* Эталон — только после отправки своего решения (иначе это подсказка). */}
+          {aiState === "done" && (
+            <button onClick={() => setShowSolution((s) => !s)} className="btn-ghost flex-1 justify-center py-3 text-[13.5px]">
+              {showSolution ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showSolution ? "Скрыть эталон" : "Посмотреть эталонное решение"}
+            </button>
+          )}
         </div>
       )}
 
@@ -149,8 +152,8 @@ export default function Part2Task({ task }: { task: VariantTaskDef }) {
         </div>
       )}
 
-      {/* эталонное решение (только с преподавателем) */}
-      {hasTeacher && showSolution && task.solution_latex && (
+      {/* эталонное решение (только с преподавателем и после отправки своего решения) */}
+      {hasTeacher && aiState === "done" && showSolution && task.solution_latex && (
         <div className="pop-in mt-4 rounded-xl border border-mark-yellow/30 bg-mark-yellow/5 p-4">
           <p className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-mark-yellow">
             <Eye className="h-3.5 w-3.5" /> Эталонное решение

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, Download, Eye, FileText, GraduationCap, Printer, Search, X } from "lucide-react";
 import { useApp } from "./store";
 import {
@@ -37,7 +37,8 @@ function ReaderModal({ m, onClose, onDownloaded }: { m: StudyMaterial; onClose: 
   };
 
   const direct = () => {
-    downloadFile(m);
+    const r = downloadFile(m);
+    if (r === "none") return; // файла нет — счётчик не накручиваем, мусор не скачиваем
     bumpDownload(m.id);
     onDownloaded();
   };
@@ -129,6 +130,20 @@ export default function MaterialsPage() {
   const totalDownloads = useMemo(() => all.reduce((s, m) => s + m.downloads, 0), [all]);
 
   const refresh = () => setAll(readAllMaterials());
+
+  /* Чтобы методичка, добавленная преподавателем в кабинете, сразу появилась
+     у ученика при возврате на вкладку (демо-режим, общее localStorage). */
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    const onFocus = () => refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-5">

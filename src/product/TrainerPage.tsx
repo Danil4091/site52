@@ -245,10 +245,13 @@ export default function TrainerPage() {
                         className="btn-gold flex-1 px-5 py-3 text-[13.5px] disabled:opacity-40 sm:flex-none">
                         {item.checking ? <RefreshCw className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : "Проверить"}
                       </button>
-                      <button onClick={() => toggleRevealed(item.task.id)}
-                        className={`btn-ghost px-3.5 py-3 text-[12.5px] ${wrong ? "!border-mark-yellow/50 !text-mark-yellow" : ""}`}>
-                        <Eye className="h-4 w-4" /> {item.revealed ? "Скрыть" : "Решение"}
-                      </button>
+                      {/* Разбор — только после хотя бы одной отправки ответа (иначе это подсказка). */}
+                      {wrong && (
+                        <button onClick={() => toggleRevealed(item.task.id)}
+                          className="btn-ghost !border-mark-yellow/50 !text-mark-yellow px-3.5 py-3 text-[12.5px]">
+                          <Eye className="h-4 w-4" /> {item.revealed ? "Скрыть" : "Решение"}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -257,7 +260,7 @@ export default function TrainerPage() {
                       Не совпало. Проверьте запятую/точку и вычисления — или откройте разбор.
                     </p>
                   )}
-                  {item.revealed && item.task.solution && (
+                  {wrong && item.revealed && item.task.solution && (
                     <div className="pop-in mt-3 rounded-lg border border-mark-yellow/30 bg-mark-yellow/5 p-3.5">
                       <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-mark-yellow"><Zap className="h-3.5 w-3.5" />Разбор</p>
                       <p className="text-[13px] leading-relaxed text-chalk-200"><LatexText text={item.task.solution} /></p>

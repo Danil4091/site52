@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Download, FileText, Plus, Server, Trash2, UploadCloud } from "lucide-react";
 import { useApp } from "./store";
-import { addMaterial, downloadFile, readAllMaterials, removeMaterial, type StudyMaterial } from "./materials";
+import { addMaterial, downloadFile, printMaterialInNewWindow, readAllMaterials, removeMaterial, type StudyMaterial } from "./materials";
 
 const MAX_LOCAL_KB = 2560; // ~2.5 МБ — предел localStorage; в бою файл уходит на сервер
 
@@ -177,9 +177,24 @@ export default function MaterialsAdmin() {
                 {m.fileSizeKb ? ` · ${m.fileSizeKb > 1024 ? (m.fileSizeKb / 1024).toFixed(1) + " МБ" : m.fileSizeKb + " КБ"}` : ""}
               </p>
             </div>
-            <button onClick={() => { downloadFile(m); pushToast("Скачивание началось"); }} className="btn-ghost p-2.5" aria-label="Скачать" title="Скачать (проверить файл)">
-              <Download className="h-4 w-4" />
-            </button>
+            {m.kind === "file" ? (
+              <button
+                onClick={() => {
+                  const r = downloadFile(m);
+                  if (r === "file") pushToast("PDF скачивается…");
+                  else if (r === "url") pushToast("Открываю файл по ссылке…");
+                  else pushToast("Файл не найден — укажите прямую ссылку или загрузите PDF заново");
+                }}
+                className="btn-ghost p-2.5" aria-label="Скачать" title="Скачать файл (проверить)">
+                <Download className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => { printMaterialInNewWindow(m); }}
+                className="btn-ghost p-2.5" aria-label="Открыть" title="Открыть печатную версию (демо-материал)">
+                <Download className="h-4 w-4" />
+              </button>
+            )}
             {m.kind === "file" && (
               <button onClick={() => { removeMaterial(m.id); setMaterials(readAllMaterials()); pushToast("Методичка удалена"); }} className="btn-ghost !border-mark-red/40 !text-mark-red p-2.5 hover:!bg-mark-red/10" aria-label="Удалить" title="Удалить">
                 <Trash2 className="h-4 w-4" />
