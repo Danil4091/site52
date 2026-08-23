@@ -11,25 +11,25 @@
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json as _json
 import os
 import secrets
-import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import List, Literal, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
+# Низкоуровневые примитивы вынесены в отдельные модули, чтобы зависимости
+# авторизации (deps.py) импортировались без циклического импорта.
+from .database import Session, engine, get_db
+from .deps import get_current_teacher, get_current_user
 from .models import Base, ExamType, Task, User, Variant
 from .security import (
+    create_token,
     generate_recovery_code,
     hash_password,
     needs_rehash,
@@ -38,10 +38,6 @@ from .security import (
 )
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor")
-# HMAC_SECRET — основной; SECRET_KEY оставлен как обратной-совместимый alias.
-HMAC_SECRET = os.getenv("HMAC_SECRET") or os.getenv("SECRET_KEY") or "dev-secret-change-me"
-SECRET_KEY = HMAC_SECRET
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
@@ -50,14 +46,6 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Pudov-Ege-2026")
 # Код привязки учеников — отсылка к реке Сысоле (Сыктывкар), без фамилии.
 ADMIN_TEACHER_CODE = os.getenv("ADMIN_TEACHER_CODE", "SYSOLA-PRO")
 ADMIN_FULL_NAME = os.getenv("ADMIN_FULL_NAME", "Даниил Андреевич Пудов")
-
-engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
-Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
-async def get_db():
-    async with Session() as s:
-        yield s
 
 
 async def ensure_admin() -> None:
@@ -453,34 +441,6 @@ async def reset_student_password(
 # Авторизация (HMAC-токены, без внешних зависимостей) + варианты (API v1)
 # ══════════════════════════════════════════════════════════════════════
 
-def _sign(body: str) -> str:
-    return hmac.new(SECRET_KEY.encode(), body.encode(), hashlib.sha256).hexdigest()
-
-
-def create_token(user_id: str, role: str, ttl: int = 7 * 24 * 3600) -> str:
-    payload = _json.dumps(
-        {"sub": user_id, "role": role, "exp": int(time.time()) + ttl}, separators=(",", ":")
-    )
-    body = base64.urlsafe_b64encode(payload.encode()).decode()
-    return f"{body}.{_sign(body)}"
-
-
-def decode_token(token: str) -> dict:
-    try:
-        body, sig = token.split(".", 1)
-    except ValueError:
-        raise HTTPException(401, "Некорректный токен")
-    if not hmac.compare_digest(sig, _sign(body)):
-        raise HTTPException(401, "Недействительная подпись токена")
-    try:
-        payload = _json.loads(base64.urlsafe_b64decode(body.encode()))
-    except Exception:
-        raise HTTPException(401, "Некорректный токен")
-    if payload.get("exp", 0) < time.time():
-        raise HTTPException(401, "Токен истёк")
-    return payload
-
-
 class LoginIn(BaseModel):
     email: str
     password: str
@@ -503,44 +463,6 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
         "role": user.role.value,
         "nickname": user.nickname,
     }
-
-
-async def get_current_teacher(
-    authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """Зависимость: только авторизованный преподаватель."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Требуется авторизация (Bearer-токен)")
-    payload = decode_token(authorization.split(" ", 1)[1].strip())
-    if payload.get("role") != "teacher":
-        raise HTTPException(403, "Доступно только преподавателям")
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except (KeyError, ValueError):
-        raise HTTPException(401, "Некорректный токен")
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(401, "Пользователь не найден")
-    return user
-
-
-async def get_current_user(
-    authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """Зависимость: любой авторизованный пользователь (ученик/преподаватель)."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Требуется авторизация (Bearer-токен)")
-    payload = decode_token(authorization.split(" ", 1)[1].strip())
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except (KeyError, ValueError):
-        raise HTTPException(401, "Некорректный токен")
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(401, "Пользователь не найден")
-    return user
 
 
 class BindTeacherIn(BaseModel):
