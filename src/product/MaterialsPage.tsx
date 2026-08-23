@@ -36,8 +36,8 @@ function ReaderModal({ m, onClose, onDownloaded }: { m: StudyMaterial; onClose: 
     onDownloaded();
   };
 
-  const direct = () => {
-    const r = downloadFile(m);
+  const direct = async () => {
+    const r = await downloadFile(m);
     if (r === "none") return; // файла нет — счётчик не накручиваем, мусор не скачиваем
     bumpDownload(m.id);
     onDownloaded();

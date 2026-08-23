@@ -5,13 +5,15 @@
 
    Хранение:
      • демо-материалы встроены в код (структурированный конспект —
-       при скачивании собирается аккуратный печатный документ);
-     • добавленные преподавателем — localStorage (PDF до 2.5 МБ
-       как data-URL, либо прямая ссылка). В боевом режиме файлы
-       уходят на сервер: POST /api/materials (multipart) → папка
-       materials/ рядом с uploads/, отдача через /api/static.
+        при скачивании собирается аккуратный печатный документ);
+     • добавленные преподавателем — сам файл лежит в IndexedDB
+        (fileId), в localStorage только метаданные. Если IndexedDB
+        недоступен — фолбэк на data-URL в localStorage. В боевом
+        режиме файлы уходят на сервер: POST /api/materials (multipart)
+        → папка materials/ рядом с uploads/, отдача через /api/static.
    ══════════════════════════════════════════════════════════════════ */
 
+import { deleteFileBlob, getFileBlob, isIndexedDbAvailable, saveFileBlob } from "./fileStorage";
 export interface MaterialSection {
   h: string;
   body: string; // допускаются переносы строк и unicode-математика (√, ², π, ≤)
@@ -28,7 +30,8 @@ export interface StudyMaterial {
   addedAt: number;
   kind: "demo" | "file";
   content?: MaterialSection[];   // для demo — печатается в документ
-  fileData?: string;             // data:application/pdf;base64,… (загруженный файл)
+  fileId?: string;               // id Blob в IndexedDB (основное хранение)
+  fileData?: string;             // dataURL-фолбэк, если IndexedDB недоступен
   fileUrl?: string;              // прямая ссылка на PDF
   fileName?: string;
   fileSizeKb?: number;
@@ -255,10 +258,55 @@ export function addMaterial(m: Omit<StudyMaterial, "id" | "downloads" | "addedAt
   return full;
 }
 
+/**
+ * Сохраняет методичку с PDF-файлом. Сам файл кладёт в IndexedDB
+ * (практически без ограничения размера), в localStorage — только
+ * метаданные с fileId. Если IndexedDB недоступен — фолбэк на dataURL
+ * в localStorage (с ограничением ~2.5 МБ).
+ */
+export async function addMaterialWithFile(
+  meta: Omit<StudyMaterial, "id" | "downloads" | "addedAt" | "kind" | "fileId" | "fileData">,
+  file: File | null,
+  fileDataUrl: string | null,
+): Promise<StudyMaterial> {
+  const id = `mat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  let fileId: string | undefined;
+  let fileData: string | undefined;
+
+  if (file) {
+    if (await isIndexedDbAvailable()) {
+      await saveFileBlob(id, file);   // Blob как есть, без base64
+      fileId = id;
+    } else if (fileDataUrl) {
+      fileData = fileDataUrl;          // фолбэк для приватного режима
+    } else {
+      throw new Error("Не удалось сохранить файл. Используйте прямую ссылку на PDF.");
+    }
+  }
+
+  const full: StudyMaterial = {
+    ...meta, id, downloads: 0, addedAt: Date.now(), kind: "file", fileId, fileData,
+  };
+  const list = readUserMaterials();
+  try {
+    localStorage.setItem(KEY, JSON.stringify([full, ...list]));
+  } catch {
+    if (fileId) { try { await deleteFileBlob(fileId); } catch { /* ок */ } }
+    throw new Error("Не удалось сохранить данные методички. Попробуйте ещё раз.");
+  }
+  return full;
+}
+
 export function removeMaterial(id: string): void {
+  const target = readUserMaterials().find((m) => m.id === id);
   try {
     localStorage.setItem(KEY, JSON.stringify(readUserMaterials().filter((m) => m.id !== id)));
   } catch { /* ок */ }
+  /* подчищаем Blob из IndexedDB (файловое хранилище) */
+  if (target?.fileId) {
+    deleteFileBlob(target.fileId).catch(() => { /* ок */ });
+  }
 }
 
 export function bumpDownload(id: string): void {
@@ -290,30 +338,48 @@ function dataUrlToBlob(dataUrl: string): Blob | null {
 }
 
 /**
- * Скачивание методички. Возвращает, что именно скачано:
- *  "file" — PDF из data-URL; "url" — переход по прямой ссылке; "none" — файла нет.
- * Больше никогда не скачивает «мусор»: при отсутствии файла возвращает "none".
+ * Скачивание методички (асинхронное). Приоритет:
+ *  1) Blob из IndexedDB (fileId) — основное хранение;
+ *  2) data-URL (фолбэк); 3) прямая ссылка (fileUrl).
+ * Возвращает "file" | "url" | "none". Мусор не скачивается никогда.
  */
-export function downloadFile(m: StudyMaterial): "file" | "url" | "none" {
+export async function downloadFile(m: StudyMaterial): Promise<"file" | "url" | "none"> {
   const name = m.fileName ?? `${m.title.replace(/[^\wа-яёА-ЯЁ0-9]+/g, "_") || "metodichka"}.pdf`;
 
+  const triggerDownload = (blob: Blob): void => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  /* 1) IndexedDB */
+  if (m.fileId) {
+    try {
+      const blob = await getFileBlob(m.fileId);
+      if (blob && blob.size > 0) {
+        triggerDownload(blob);
+        return "file";
+      }
+    } catch { /* переходим к фолбэку */ }
+  }
+
+  /* 2) data-URL фолбэк */
   if (m.fileData) {
     const blob = dataUrlToBlob(m.fileData);
     if (blob && blob.size > 0) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      triggerDownload(blob);
       return "file";
     }
     return "none"; // битый data-URL — не скачиваем мусор
   }
 
+  /* 3) прямая ссылка */
   if (m.fileUrl) {
     const a = document.createElement("a");
     a.href = m.fileUrl;

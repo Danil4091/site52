@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
 import { Download, FileText, Plus, Server, Trash2, UploadCloud } from "lucide-react";
 import { useApp } from "./store";
-import { addMaterial, downloadFile, printMaterialInNewWindow, readAllMaterials, removeMaterial, type StudyMaterial } from "./materials";
+import { addMaterialWithFile, downloadFile, printMaterialInNewWindow, readAllMaterials, removeMaterial, type StudyMaterial } from "./materials";
 
-const MAX_LOCAL_KB = 2560; // ~2.5 МБ — предел localStorage; в бою файл уходит на сервер
+/* Файлы хранятся в IndexedDB — лимит на порядки больше, чем у localStorage.
+   50 МБ — мягкий потолок; в боевом режиме файл уйдёт на сервер, ограничений нет. */
+const MAX_FILE_KB = 50 * 1024;
 
 /* Панель «Методички» в кабинете преподавателя:
    загрузка PDF (файл или ссылка), список со счётчиком скачиваний, удаление. */
@@ -18,7 +20,9 @@ export default function MaterialsAdmin() {
   const [pages, setPages] = useState(2);
   const [fileUrl, setFileUrl] = useState("");
   const [fileData, setFileData] = useState<string | null>(null);
+  const [fileObj, setFileObj] = useState<File | null>(null);
   const [fileMeta, setFileMeta] = useState<{ name: string; sizeKb: number } | null>(null);
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const field = "w-full rounded-lg border border-board-600/70 bg-board-950/50 px-3 py-2 text-[13px] text-chalk-50 outline-none transition-all placeholder:text-chalk-600 focus:border-mark-yellow";
@@ -31,42 +35,48 @@ export default function MaterialsAdmin() {
       return;
     }
     const sizeKb = Math.round(f.size / 1024);
-    if (sizeKb > MAX_LOCAL_KB) {
-      pushToast(`Файл ${Math.round(sizeKb / 1024 * 10) / 10} МБ больше лимита демо-режима (~2.5 МБ). В боевом режиме ограничений нет — файл уйдёт на сервер.`);
+    if (sizeKb > MAX_FILE_KB) {
+      pushToast(`Файл ${Math.round(sizeKb / 1024 * 10) / 10} МБ больше лимита демо-режима (50 МБ). В боевом режиме ограничений нет — файл уйдёт на сервер.`);
       return;
     }
+    setFileObj(f);
+    setFileMeta({ name: f.name, sizeKb });
+    setFileUrl("");
+    /* dataURL читаем только как фолбэк (если IndexedDB недоступен) */
     const reader = new FileReader();
-    reader.onload = () => {
-      setFileData(String(reader.result));
-      setFileMeta({ name: f.name, sizeKb });
-      setFileUrl("");
-    };
+    reader.onload = () => setFileData(String(reader.result));
     reader.readAsDataURL(f);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!title.trim()) return pushToast("Укажите название методички");
-    if (!fileData && !fileUrl.trim()) return pushToast("Загрузите PDF или укажите ссылку на файл");
+    if (!fileObj && !fileUrl.trim()) return pushToast("Загрузите PDF или укажите ссылку на файл");
+    if (saving) return;
+    setSaving(true);
     try {
-      addMaterial({
-        title: title.trim(),
-        tag: tag.trim() || "Методичка",
-        topic,
-        part,
-        pages: Math.max(1, pages),
-        kind: "file",
-        fileData: fileData ?? undefined,
-        fileUrl: fileUrl.trim() || undefined,
-        fileName: fileMeta?.name,
-        fileSizeKb: fileMeta?.sizeKb,
-      });
+      await addMaterialWithFile(
+        {
+          title: title.trim(),
+          tag: tag.trim() || "Методичка",
+          topic,
+          part,
+          pages: Math.max(1, pages),
+          fileUrl: fileUrl.trim() || undefined,
+          fileName: fileMeta?.name,
+          fileSizeKb: fileMeta?.sizeKb,
+        },
+        fileObj,
+        fileData,
+      );
       setMaterials(readAllMaterials());
       setShowForm(false);
-      setTitle(""); setTag(""); setFileUrl(""); setFileData(null); setFileMeta(null);
+      setTitle(""); setTag(""); setFileUrl(""); setFileData(null); setFileObj(null); setFileMeta(null);
       if (fileRef.current) fileRef.current.value = "";
       pushToast("Методичка опубликована — ученики уже могут её скачать");
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -179,8 +189,8 @@ export default function MaterialsAdmin() {
             </div>
             {m.kind === "file" ? (
               <button
-                onClick={() => {
-                  const r = downloadFile(m);
+                onClick={async () => {
+                  const r = await downloadFile(m);
                   if (r === "file") pushToast("PDF скачивается…");
                   else if (r === "url") pushToast("Открываю файл по ссылке…");
                   else pushToast("Файл не найден — укажите прямую ссылку или загрузите PDF заново");
