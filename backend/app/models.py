@@ -178,10 +178,14 @@ class TaskAttempt(Base):
 
 
 class TaskProgress(Base):
-    """Прогресс тренажёра: какие задачи темы пользователь решил ВЕРНО.
+    """Прогресс тренажёра по связи (user_id, task_id).
 
-    Именно по связи (user_id, task_id) лента исключает дубли:
-    в выдачу попадают только ещё не решённые задачи.
+    - attempt_count — сколько раз пользователь ПРОБОВАЛ задачу (верно или нет).
+    - solved        — решена ли она ВЕРНО хотя бы раз.
+    - solved_at     — момент первого верного решения (NULL, если ещё не решена).
+
+    Лента исключает только solved=True. Разбор выдаётся при attempt_count>=1
+    (то есть достаточно одной попытки, даже неверной).
     """
     __tablename__ = "task_progress"
     __table_args__ = (
@@ -190,4 +194,6 @@ class TaskProgress(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
-    solved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    solved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    solved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
