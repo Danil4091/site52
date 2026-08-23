@@ -3,8 +3,8 @@ import {
   AlertTriangle, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronLeft, ClipboardList,
   Clock, Copy, Flame, GraduationCap, KeyRound, PenLine, Send, Sparkles, Target, Trash2, TrendingUp, Users, XCircle,
 } from "lucide-react";
-import { useApp } from "./store";
-import { BANK, REAL_VARIANT, type AttemptRecord, type TopicStat } from "./data";
+import { useApp, type TopicStat } from "./store";
+import { BANK, REAL_VARIANT, type AttemptRecord } from "./data";
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_TEACHER_CODE } from "./config";
 import { Avatar, LatexText } from "./ui";
 import { fetchTeacherStudents, hasServerAuth, isApiEnabled } from "./api";

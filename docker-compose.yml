@@ -68,6 +68,12 @@ services:
       ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Даниил Андреевич Пудов}
     ports:
       - "8000:8000"
+    volumes:
+      # Файлы методичек (PDF) живут в именованном томе — переживают
+      # пересоздание контейнера. Без этого тома файлы терялись бы при
+      # `docker compose up --build`, а записи в БД оставались (битые ссылки).
+      - komi_materials:/app/materials
 
 volumes:
   komi_pg:
+  komi_materials:
