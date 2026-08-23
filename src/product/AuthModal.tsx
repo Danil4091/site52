@@ -3,7 +3,6 @@ import { Check, Copy, Eye, EyeOff, GraduationCap, KeyRound, LogIn, ShieldCheck, 
 import { useApp, loadSession, makeInviteCode, logReferral, type ProductUser } from "./store";
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_PASSWORD, ADMIN_TEACHER_CODE } from "./config";
 import { resolveTeacher } from "./variantSchema";
-import { isApiEnabled } from "./api";
 import { generateRecoveryCode, saveRecoveryCode } from "./recovery";
 import type { LegalDoc } from "./LegalDocs";
 
@@ -32,9 +31,10 @@ function saveUsers(users: StoredUser[]) {
   try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch { /* ок */ }
 }
 
-/** Автосид мастер-аккаунта преподавателя (только автономный режим). */
+/** Автосид мастер-аккаунта преподавателя.
+ *  Идемпотентен: гарантируем, что вход для преподавателя работает всегда —
+ *  и в демо (localStorage), и при поднятом бэкенде (как страховка). */
 function seedAdminIfNeeded() {
-  if (isApiEnabled()) return; // в продакшене — backend-скрипт
   const users = loadUsers();
   if (users.some((u) => u.nickname === ADMIN_NICKNAME && u.role === "teacher")) return;
   users.push({

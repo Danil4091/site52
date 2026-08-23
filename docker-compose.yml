@@ -43,6 +43,13 @@ services:
     depends_on:
       db:
         condition: service_healthy   # API стартует только после готовности БД
+    # Готовность = миграции накатились (entrypoint) и uvicorn отвечает.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
     environment:
       # Внутри сети docker имя хоста базы = имя сервиса `db`.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-komi}:${POSTGRES_PASSWORD:-komi_secret}@db:5432/${POSTGRES_DB:-repetytor}

@@ -99,7 +99,22 @@ async def ensure_admin() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Если схемой управляет Alembic (таблица alembic_version существует),
+        # НЕ вызываем create_all — иначе конфликт DuplicateObjectError
+        # при последующих миграциях. create_all — только для «чистой» БД,
+        # где миграции ещё не накатывались.
+        from sqlalchemy import text as _text
+
+        managed = (
+            await conn.execute(
+                _text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = 'alembic_version'"
+                )
+            )
+        ).first()
+        if managed is None:
+            await conn.run_sync(Base.metadata.create_all)
     try:
         await ensure_admin()
     except Exception as exc:  # не даём сбою сида уронить запуск API

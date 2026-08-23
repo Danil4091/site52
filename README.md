@@ -27,29 +27,58 @@
 | Бэкенд | Python 3.12 · FastAPI · SQLAlchemy 2.0 (async) · asyncpg · Alembic |
 | БД | PostgreSQL 16 |
 
-## Быстрый старт (локально)
+## Запуск в одну команду (рекомендуется)
 
-### Фронтенд
+Скрипт сам создаёт `.env`, поднимает Docker (PostgreSQL + API), накатывает
+миграции и запускает фронтенд:
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173
+./start.sh        # Linux / macOS
+.\start.ps1       # Windows PowerShell
 ```
 
-Для подключения к бэкенду создайте `.env` из `.env.example` и укажите
-`VITE_API_URL`. Без него — автономный демо-режим.
+После запуска:
+- **Сайт** — http://localhost:3000
+- **API (Swagger)** — http://localhost:8000/docs
+- **Вход преподавателя** — `daniil` / `Pudov-Ege-2026` (код ученикам `SYSOLA-PRO`)
 
-### Бэкенд (опционально)
+> Если бэкенд не поднимется, сайт автоматически продолжит работать в
+> демо-режиме (данные в localStorage) — об этом скажет индикатор в шапке.
 
+### Вручную (по отдельности)
+
+**Фронтенд:**
+```bash
+node scripts/ensure-env.js   # создаст .env (гарантирует VITE_API_URL)
+npm install
+npm run dev                  # http://localhost:3000
+```
+
+**Бэкенд (Docker):**
+```bash
+docker compose up -d         # БД + API, миграции накатятся автоматически
+```
+
+**Бэкенд (без Docker):**
 ```bash
 cd backend
 python -m venv .venv && .venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 cp .env.example .env                               # и заполните
+alembic upgrade head                               # накатить схему
 uvicorn app.main:app --reload                      # http://localhost:8000/docs
 ```
 
 Мастер-аккаунт преподавателя создаётся автоматически: **daniil / Pudov-Ege-2026** (код ученикам `SYSOLA-PRO` — отсылка к реке Сысоле, без фамилии).
+
+### Как это устроено (надёжность запуска)
+
+- `VITE_API_URL` не задан → фронтенд использует дефолт `http://localhost:8000`.
+- Бэкенд отвечает → «Сервер подключён» (общая база PostgreSQL).
+- Бэкенд не отвечает → graceful-фолбэк в демо-режим (localStorage), без ошибок.
+- Миграции накатываются при старте контейнера (`entrypoint.sh`), ENUM-типы
+  создаются идемпотентно (`IF NOT EXISTS` через перехват исключения), поэтому
+  `DuplicateObjectError` больше не возникает.
 
 ## Структура
 

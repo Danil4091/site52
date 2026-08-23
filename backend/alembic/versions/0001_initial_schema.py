@@ -23,13 +23,32 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def upgrade() -> None:
-    # ── перечисления ────────────────────────────────────────────────
-    op.execute("CREATE TYPE exam_type AS ENUM ('ege', 'oge')")
-    op.execute("CREATE TYPE user_role AS ENUM ('student', 'teacher', 'admin')")
+def _create_enum_if_not_exists(name: str, values: str) -> None:
+    """Создаёт ENUM, игнорируя duplicate_object.
+
+    PostgreSQL не поддерживает ``CREATE TYPE IF NOT EXISTS``, поэтому
+    используем блок с перехватом исключения. Это делает миграцию
+    идемпотентной даже если типы уже созданы (например, через
+    ``Base.metadata.create_all`` при старте FastAPI).
+    """
     op.execute(
-        "CREATE TYPE attempt_status AS ENUM ('correct', 'incorrect', 'calc_error', 'skipped')"
+        sa.text(
+            f"""
+            DO $$ BEGIN
+                CREATE TYPE {name} AS ENUM ({values});
+            EXCEPTION
+                WHEN duplicate_object THEN NULL;
+            END $$;
+            """
+        )
     )
+
+
+def upgrade() -> None:
+    # ── перечисления (идемпотентно) ─────────────────────────────────
+    _create_enum_if_not_exists("exam_type", "'ege', 'oge'")
+    _create_enum_if_not_exists("user_role", "'student', 'teacher', 'admin'")
+    _create_enum_if_not_exists("attempt_status", "'correct', 'incorrect', 'calc_error', 'skipped'")
 
     # ── users ───────────────────────────────────────────────────────
     op.create_table(

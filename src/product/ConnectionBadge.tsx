@@ -1,29 +1,29 @@
 import { useEffect, useState } from "react";
 import { Server, ServerOff } from "lucide-react";
-import { API_URL, checkBackendHealth, isApiEnabled } from "./api";
+import { API_URL, checkBackendHealth, isApiExplicit } from "./api";
 
 /* ══════════════════════════════════════════════════════════════════
    Индикатор соединения с сервером в шапке.
-   — серый «демо-режим»: VITE_API_URL не задан, данные в localStorage.
+   — серый «демо-режим»: бэкенд не отвечает, VITE_API_URL не задан
+     явно (работает дефолт localhost:8000), данные в localStorage.
    — зелёный «сервер подключён»: бэкенд отвечает на /api/health.
-   — красный «сервер недоступен»: URL задан, но бэкенд не отвечает.
+   — красный «сервер недоступен»: VITE_API_URL задан явно, но бэкенд
+     не отвечает.
    Перепроверяет каждые 30 секунд.
    ══════════════════════════════════════════════════════════════════ */
 
 type Status = "demo" | "online" | "offline";
 
 export default function ConnectionBadge() {
-  const [status, setStatus] = useState<Status>(isApiEnabled() ? "offline" : "demo");
+  const [status, setStatus] = useState<Status>("demo");
 
   useEffect(() => {
     let alive = true;
     const probe = async () => {
-      if (!isApiEnabled()) {
-        if (alive) setStatus("demo");
-        return;
-      }
       const ok = await checkBackendHealth();
-      if (alive) setStatus(ok ? "online" : "offline");
+      if (!alive) return;
+      if (ok) setStatus("online");
+      else setStatus(isApiExplicit() ? "offline" : "demo");
     };
     void probe();
     const timer = setInterval(() => void probe(), 30_000);
@@ -37,10 +37,10 @@ export default function ConnectionBadge() {
     demo: {
       label: "Демо-режим",
       title:
-        `VITE_API_URL = (пусто). Данные хранятся в вашем браузере.\n` +
-        `Создайте файл .env в КОРНЕ проекта (рядом с package.json) со строкой:\n` +
-        `VITE_API_URL=http://localhost:8000\n` +
-        `и полностью перезапустите npm run dev.`,
+        `Бэкенд не отвечает (${API_URL}), VITE_API_URL не задан явно.\n` +
+        `Работаем в демо-режиме: данные в вашем браузере.\n` +
+        `Чтобы включить общую базу, запустите бэкенд: docker compose up -d\n` +
+        `(или задайте VITE_API_URL в .env и перезапустите npm run dev).`,
       dot: "bg-chalk-500",
       text: "text-chalk-400",
       icon: <ServerOff className="h-3.5 w-3.5" />,

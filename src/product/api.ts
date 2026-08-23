@@ -6,9 +6,19 @@
    используются при подключении реального сервера.
    ══════════════════════════════════════════════════════════════════ */
 
-export const API_URL: string = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").trim().replace(/\/+$/, "");
+/** Явно задан ли VITE_API_URL в .env (а не взят из дефолта). */
+const RAW_ENV = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").trim();
+
+/**
+ * Базовый URL API. Если VITE_API_URL не задан — корректный дефолт
+ * http://localhost:8000 (локальный запуск «в одну команду»).
+ */
+export const API_URL: string = (RAW_ENV || "http://localhost:8000").replace(/\/+$/, "");
 
 export const isApiEnabled = (): boolean => API_URL.length > 0;
+
+/** true, только если пользователь явно прописал VITE_API_URL в .env. */
+export const isApiExplicit = (): boolean => RAW_ENV.length > 0;
 
 /* Dev-диагностика: сразу видно, что попало в сборку из .env.
    Если в консоли «VITE_API_URL = (пусто)» — файл .env не подхватился:
@@ -16,7 +26,7 @@ export const isApiEnabled = (): boolean => API_URL.length > 0;
    ровно «.env» (не .env.txt!) и требовать полного перезапуска npm run dev. */
 if (import.meta.env.DEV) {
   console.info(
-    `%c[API]%c VITE_API_URL = ${API_URL || "(пусто — демо-режим)"} · включён: ${isApiEnabled() ? "да" : "нет"}`,
+    `%c[API]%c VITE_API_URL = ${API_URL} (${isApiExplicit() ? "из .env" : "дефолт"}) · API включён: ${isApiEnabled() ? "да" : "нет"}`,
     "color:#5ee6a8;font-weight:bold",
     "color:inherit"
   );
