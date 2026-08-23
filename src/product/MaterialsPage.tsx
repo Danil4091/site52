@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, Download, Eye, FileText, GraduationCap, Printer, Search, X } from "lucide-react";
 import { useApp } from "./store";
 import {
-  bumpDownload, downloadFile, materialPrintHtml, readAllMaterials,
+  bumpDownload, downloadFile, loadAllMaterials, materialPrintHtml,
   type StudyMaterial,
 } from "./materials";
 
@@ -109,7 +109,7 @@ function ReaderModal({ m, onClose, onDownloaded }: { m: StudyMaterial; onClose: 
 /* ─────────────────── каталог ученика ─────────────────── */
 export default function MaterialsPage() {
   const { pushToast } = useApp();
-  const [all, setAll] = useState<StudyMaterial[]>(readAllMaterials);
+  const [all, setAll] = useState<StudyMaterial[]>([]);
   const [query, setQuery] = useState("");
   const [part, setPart] = useState<0 | 1 | 2>(0);
   const [topic, setTopic] = useState("Все");
@@ -129,7 +129,14 @@ export default function MaterialsPage() {
 
   const totalDownloads = useMemo(() => all.reduce((s, m) => s + m.downloads, 0), [all]);
 
-  const refresh = () => setAll(readAllMaterials());
+  const refresh = () => {
+    void loadAllMaterials().then(setAll);
+  };
+
+  /* Асинхронная загрузка: сервер (если подключён) + локальные + демо. */
+  useEffect(() => {
+    void loadAllMaterials().then(setAll);
+  }, []);
 
   /* Чтобы методичка, добавленная преподавателем в кабинете, сразу появилась
      у ученика при возврате на вкладку (демо-режим, общее localStorage). */

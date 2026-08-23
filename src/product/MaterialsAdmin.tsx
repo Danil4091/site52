@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileText, Plus, Server, Trash2, UploadCloud } from "lucide-react";
 import { useApp } from "./store";
-import { addMaterialWithFile, downloadFile, printMaterialInNewWindow, readAllMaterials, removeMaterial, type StudyMaterial } from "./materials";
+import { addMaterialWithFile, deleteServerMaterial, downloadFile, loadAllMaterials, printMaterialInNewWindow, removeMaterial, SRV_PREFIX, type StudyMaterial } from "./materials";
 
 /* Файлы хранятся в IndexedDB — лимит на порядки больше, чем у localStorage.
    50 МБ — мягкий потолок; в боевом режиме файл уйдёт на сервер, ограничений нет. */
@@ -11,7 +11,7 @@ const MAX_FILE_KB = 50 * 1024;
    загрузка PDF (файл или ссылка), список со счётчиком скачиваний, удаление. */
 export default function MaterialsAdmin() {
   const { pushToast } = useApp();
-  const [materials, setMaterials] = useState<StudyMaterial[]>(readAllMaterials);
+  const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [tag, setTag] = useState("");
@@ -24,6 +24,15 @@ export default function MaterialsAdmin() {
   const [fileMeta, setFileMeta] = useState<{ name: string; sizeKb: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /* Асинхронная загрузка списка: сервер (если подключён) + локальные + демо. */
+  useEffect(() => {
+    void loadAllMaterials().then(setMaterials);
+  }, []);
+
+  const refresh = () => {
+    void loadAllMaterials().then(setMaterials);
+  };
 
   const field = "w-full rounded-lg border border-board-600/70 bg-board-950/50 px-3 py-2 text-[13px] text-chalk-50 outline-none transition-all placeholder:text-chalk-600 focus:border-mark-yellow";
   const label = "mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-chalk-500";
@@ -68,7 +77,7 @@ export default function MaterialsAdmin() {
         fileObj,
         fileData,
       );
-      setMaterials(readAllMaterials());
+      refresh();
       setShowForm(false);
       setTitle(""); setTag(""); setFileUrl(""); setFileData(null); setFileObj(null); setFileMeta(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -206,7 +215,17 @@ export default function MaterialsAdmin() {
               </button>
             )}
             {m.kind === "file" && (
-              <button onClick={() => { removeMaterial(m.id); setMaterials(readAllMaterials()); pushToast("Методичка удалена"); }} className="btn-ghost !border-mark-red/40 !text-mark-red p-2.5 hover:!bg-mark-red/10" aria-label="Удалить" title="Удалить">
+              <button
+                onClick={() => {
+                  if (m.id.startsWith(SRV_PREFIX)) {
+                    void deleteServerMaterial(m.id.slice(SRV_PREFIX.length)).then(refresh);
+                  } else {
+                    removeMaterial(m.id);
+                    refresh();
+                  }
+                  pushToast("Методичка удалена");
+                }}
+                className="btn-ghost !border-mark-red/40 !text-mark-red p-2.5 hover:!bg-mark-red/10" aria-label="Удалить" title="Удалить">
                 <Trash2 className="h-4 w-4" />
               </button>
             )}

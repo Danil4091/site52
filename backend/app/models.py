@@ -197,3 +197,28 @@ class TaskProgress(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     solved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     solved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Material(Base):
+    """Методичка (теория) для бесплатного скачивания учениками.
+
+    Метаданные — в БД; сам файл лежит на диске в папке materials/
+    (рядом с uploads/), на него указывает ``file_name``. Файлы в БД
+    не кладут — только имя на диске. Скачивание: /api/materials/{id}/download.
+    """
+
+    __tablename__ = "materials"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    tag: Mapped[str] = mapped_column(String(60), nullable=False, default="Методичка")
+    topic: Mapped[str] = mapped_column(String(120), nullable=False, default="Общее")
+    part: Mapped[int] = mapped_column(Integer, nullable=False, default=0)   # 0=обе, 1, 2
+    pages: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    downloads: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Имя файла на диске (в папке materials/). NULL — файла нет.
+    file_name: Mapped[Optional[str]] = mapped_column(String(255))
+    file_size_kb: Mapped[Optional[int]] = mapped_column(Integer)
+    # Если файла на диске нет, может быть прямая ссылка.
+    file_url: Mapped[Optional[str]] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

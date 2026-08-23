@@ -15,10 +15,12 @@ import os
 import secrets
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # авторизации (deps.py) импортировались без циклического импорта.
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
-from .models import Base, ExamType, Task, User, Variant
+from .models import Base, ExamType, Material, Task, User, Variant
 from .security import (
     create_token,
     generate_recovery_code,
@@ -115,6 +117,8 @@ async def lifespan(app: FastAPI):
         ).first()
         if managed is None:
             await conn.run_sync(Base.metadata.create_all)
+    # Папка для файлов методичек (рядом с uploads/).
+    MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         await ensure_admin()
     except Exception as exc:  # не даём сбою сида уронить запуск API
@@ -785,3 +789,122 @@ async def get_variant(variant_id: str, db: AsyncSession = Depends(get_db)):
     if variant is None:
         raise HTTPException(404, "Вариант не найден")
     return _variant_to_out(variant)
+
+
+# ─────────────────────────── методички ───────────────────────────
+# Метаданные — в БД (materials), сам файл — на диске в MATERIALS_DIR.
+# Скачивание идёт через /api/materials/{id}/download, поэтому файл
+# живёт на сервере и виден всем ученикам (а не в чьём-то localStorage).
+MATERIALS_DIR = Path(__file__).resolve().parent.parent / "materials"
+ALLOWED_MATERIAL_TYPES = {"application/pdf", "application/x-pdf"}
+
+
+class MaterialOut(BaseModel):
+    id: str
+    title: str
+    tag: str
+    topic: str
+    part: int
+    pages: int
+    downloads: int
+    file_size_kb: Optional[int] = None
+    has_file: bool
+
+    @classmethod
+    def from_orm_(cls, m: Material) -> "MaterialOut":
+        return cls(
+            id=str(m.id), title=m.title, tag=m.tag, topic=m.topic,
+            part=m.part, pages=m.pages, downloads=m.downloads,
+            file_size_kb=m.file_size_kb, has_file=bool(m.file_name),
+        )
+
+
+@app.get("/api/materials", response_model=List[MaterialOut])
+async def list_materials(db: AsyncSession = Depends(get_db)):
+    """Список методичек (публичный) — для раздела «Теория»."""
+    rows = (await db.execute(select(Material).order_by(Material.created_at.desc()))).scalars().all()
+    return [MaterialOut.from_orm_(m) for m in rows]
+
+
+@app.post("/api/materials/upload", response_model=MaterialOut, status_code=201)
+async def upload_material(
+    title: str = Form(...),
+    tag: str = Form("Методичка"),
+    topic: str = Form("Общее"),
+    part: int = Form(0),
+    pages: int = Form(1),
+    file: Optional[UploadFile] = File(None),
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Загрузка методички (только преподаватель).
+
+    Файл сохраняется на диск в materials/, метаданные — в БД.
+    """
+    file_name: Optional[str] = None
+    file_size_kb: Optional[int] = None
+
+    if file is not None:
+        if (file.content_type or "") not in ALLOWED_MATERIAL_TYPES and not (file.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(400, "Нужен файл PDF")
+        data = await file.read()
+        if not data:
+            raise HTTPException(400, "Пустой файл")
+        MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
+        file_name = f"mat-{uuid.uuid4().hex}.pdf"
+        (MATERIALS_DIR / file_name).write_bytes(data)
+        file_size_kb = len(data) // 1024
+
+    m = Material(
+        title=title.strip() or "Методичка",
+        tag=tag.strip() or "Методичка",
+        topic=topic.strip() or "Общее",
+        part=part, pages=max(1, pages),
+        file_name=file_name, file_size_kb=file_size_kb,
+    )
+    db.add(m)
+    await db.commit()
+    await db.refresh(m)
+    return MaterialOut.from_orm_(m)
+
+
+@app.get("/api/materials/{material_id}/download")
+async def download_material(material_id: str, db: AsyncSession = Depends(get_db)):
+    """Скачивание файла методички (публичный). Инкрементирует счётчик скачиваний."""
+    try:
+        mid = uuid.UUID(material_id)
+    except ValueError:
+        raise HTTPException(404, "Методичка не найдена")
+    m = (await db.execute(select(Material).where(Material.id == mid))).scalar_one_or_none()
+    if m is None or not m.file_name:
+        raise HTTPException(404, "Файл методички не найден")
+    path = MATERIALS_DIR / m.file_name
+    if not path.is_file():
+        raise HTTPException(404, "Файл методички отсутствует на сервере")
+    m.downloads += 1
+    await db.commit()
+    safe_title = "".join(c if c.isalnum() else "_" for c in m.title)[:60] or "metodichka"
+    return FileResponse(path, media_type="application/pdf", filename=f"{safe_title}.pdf")
+
+
+@app.delete("/api/materials/{material_id}", status_code=204)
+async def delete_material(
+    material_id: str,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удаление методички (только преподаватель). Удаляет и файл с диска."""
+    try:
+        mid = uuid.UUID(material_id)
+    except ValueError:
+        raise HTTPException(404, "Методичка не найдена")
+    m = (await db.execute(select(Material).where(Material.id == mid))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(404, "Методичка не найдена")
+    if m.file_name:
+        try:
+            (MATERIALS_DIR / m.file_name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    await db.delete(m)
+    await db.commit()

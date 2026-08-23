@@ -14,6 +14,68 @@
    ══════════════════════════════════════════════════════════════════ */
 
 import { deleteFileBlob, getFileBlob, isIndexedDbAvailable, saveFileBlob } from "./fileStorage";
+import { API_URL, isApiEnabled } from "./api";
+
+/* ─────────────────── серверное хранилище (когда подключён бэкенд) ───────────────────
+   Когда VITE_API_URL задан и бэкенд отвечает, методички живут на сервере:
+   файл — на диске сервера, метаданные — в БД. Тогда методичка видна всем
+   ученикам (а не только в чьём-то браузере) и скачивается нормальным PDF.
+   При любой ошибке сети — мягкий фолбэк на локальное хранилище.        */
+
+export const SRV_PREFIX = "srv:";
+
+export interface ServerMaterialMeta {
+  id: string; title: string; tag: string; topic: string;
+  part: number; pages: number; downloads: number;
+  file_size_kb: number | null; has_file: boolean;
+}
+
+/** Список методичек с сервера. При ошибке — null ( caller фолбэчится). */
+export async function fetchServerMaterials(): Promise<ServerMaterialMeta[] | null> {
+  if (!isApiEnabled()) return null;
+  try {
+    const res = await fetch(`${API_URL}/api/materials`);
+    if (!res.ok) return null;
+    return (await res.json()) as ServerMaterialMeta[];
+  } catch {
+    return null;
+  }
+}
+
+/** Загрузка методички на сервер. Возвращает метаданные или null (фолбэк). */
+export async function uploadServerMaterial(
+  meta: { title: string; tag: string; topic: string; part: number; pages: number },
+  file: File,
+): Promise<ServerMaterialMeta | null> {
+  if (!isApiEnabled()) return null;
+  try {
+    const fd = new FormData();
+    fd.append("title", meta.title);
+    fd.append("tag", meta.tag);
+    fd.append("topic", meta.topic);
+    fd.append("part", String(meta.part));
+    fd.append("pages", String(meta.pages));
+    fd.append("file", file);
+    const res = await fetch(`${API_URL}/api/materials/upload`, { method: "POST", body: fd });
+    if (!res.ok) return null;
+    return (await res.json()) as ServerMaterialMeta;
+  } catch {
+    return null;
+  }
+}
+
+/** Удаляет методичку на сервере (для преподавателя). */
+export async function deleteServerMaterial(serverId: string): Promise<void> {
+  if (!isApiEnabled()) return;
+  try {
+    await fetch(`${API_URL}/api/materials/${serverId}`, { method: "DELETE" });
+  } catch { /* ок */ }
+}
+
+/** URL скачивания серверной методички. */
+export function serverDownloadUrl(serverId: string): string {
+  return `${API_URL}/api/materials/${serverId}/download`;
+}
 export interface MaterialSection {
   h: string;
   body: string; // допускаются переносы строк и unicode-математика (√, ², π, ≤)
@@ -241,6 +303,29 @@ export function readAllMaterials(): StudyMaterial[] {
   return [...withDl(readUserMaterials()), ...withDl(DEMO_MATERIALS)];
 }
 
+/**
+ * Асинхронная сводная загрузка: серверные методички (когда бэкенд
+ * подключён) + локальные + демо. Серверные преобразуются в StudyMaterial
+ * с fileId "srv:<id>" — скачивание идёт через бэкенд.
+ */
+export async function loadAllMaterials(): Promise<StudyMaterial[]> {
+  const dl = readLS<Record<string, number>>(DL_KEY, {});
+  const withDl = (list: StudyMaterial[]) =>
+    list.map((m) => ({ ...m, downloads: m.downloads + (dl[m.id] ?? 0) }));
+
+  const server = await fetchServerMaterials();
+  const serverMaterials: StudyMaterial[] = (server ?? []).map((s) => ({
+    id: `${SRV_PREFIX}${s.id}`,
+    title: s.title, tag: s.tag, topic: s.topic, part: s.part as StudyMaterial["part"],
+    pages: s.pages, downloads: s.downloads, addedAt: 0, kind: "file" as const,
+    fileId: `${SRV_PREFIX}${s.id}`,
+    fileUrl: serverDownloadUrl(s.id),
+    fileSizeKb: s.file_size_kb ?? undefined,
+  }));
+
+  return [...serverMaterials, ...withDl(readUserMaterials()), ...withDl(DEMO_MATERIALS)];
+}
+
 export function addMaterial(m: Omit<StudyMaterial, "id" | "downloads" | "addedAt" | "kind"> & { kind: StudyMaterial["kind"] }): StudyMaterial {
   const full: StudyMaterial = { ...m, id: `mat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, downloads: 0, addedAt: Date.now() };
   const list = readUserMaterials();
@@ -269,6 +354,23 @@ export async function addMaterialWithFile(
   file: File | null,
   fileDataUrl: string | null,
 ): Promise<StudyMaterial> {
+  /* 1) Сервер (когда бэкенд подключён): файл живёт на сервере, виден всем. */
+  if (file) {
+    const serverMeta = await uploadServerMaterial(
+      { title: meta.title, tag: meta.tag, topic: meta.topic, part: meta.part, pages: meta.pages },
+      file,
+    );
+    if (serverMeta) {
+      return {
+        ...meta, id: `${SRV_PREFIX}${serverMeta.id}`, downloads: serverMeta.downloads,
+        addedAt: Date.now(), kind: "file", fileId: `${SRV_PREFIX}${serverMeta.id}`,
+        fileUrl: serverDownloadUrl(serverMeta.id), fileSizeKb: serverMeta.file_size_kb ?? undefined,
+      };
+    }
+    /* сервер недоступен/ошибка — фолбэк на локальное хранилище ниже */
+  }
+
+  /* 2) Локально: файл в IndexedDB, метаданные в localStorage. */
   const id = `mat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   let fileId: string | undefined;
@@ -357,6 +459,19 @@ export async function downloadFile(m: StudyMaterial): Promise<"file" | "url" | "
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
+
+  /* 0) серверная методичка — качаем готовый PDF с бэкенда */
+  if (m.fileId && m.fileId.startsWith(SRV_PREFIX)) {
+    const url = serverDownloadUrl(m.fileId.slice(SRV_PREFIX.length));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return "url";
+  }
 
   /* 1) IndexedDB */
   if (m.fileId) {
