@@ -10,6 +10,20 @@ export const API_URL: string = (import.meta.env.VITE_API_URL as string | undefin
 
 export const isApiEnabled = (): boolean => API_URL.length > 0;
 
+/** Проверка доступности сервера (GET /api/health). Возвращает true, если бэкенд отвечает. */
+export async function checkBackendHealth(): Promise<boolean> {
+  if (!isApiEnabled()) return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`${API_URL}/api/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },

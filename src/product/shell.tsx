@@ -6,6 +6,7 @@ import {
 import { useTheme } from "./theme";
 import { useApp, type Route } from "./store";
 import { NotificationsBell } from "./NotificationsBell";
+import ConnectionBadge from "./ConnectionBadge";
 import { levelFromXp } from "./ui";
 import { titleForLevel } from "./data";
 
@@ -125,6 +126,7 @@ export function Header() {
             aria-label="Журнал ошибок" title="Журнал ошибок">
             <Eraser className="h-4 w-4" />
           </button>
+          <ConnectionBadge />
           <button onClick={toggle}
             className="flex h-11 w-11 items-center justify-center rounded-lg border border-board-600/70 bg-board-800/60 text-chalk-400 transition-all duration-200 hover:border-mark-yellow/50 hover:text-mark-yellow active:scale-95 md:h-9 md:w-9"
             aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"} title={theme === "dark" ? "Светлая тема" : "Тёмная тема"}>
