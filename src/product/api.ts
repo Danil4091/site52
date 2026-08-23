@@ -6,9 +6,21 @@
    используются при подключении реального сервера.
    ══════════════════════════════════════════════════════════════════ */
 
-export const API_URL: string = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+export const API_URL: string = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").trim().replace(/\/+$/, "");
 
 export const isApiEnabled = (): boolean => API_URL.length > 0;
+
+/* Dev-диагностика: сразу видно, что попало в сборку из .env.
+   Если в консоли «VITE_API_URL = (пусто)» — файл .env не подхватился:
+   он должен лежать В КОРНЕ проекта (рядом с package.json), называться
+   ровно «.env» (не .env.txt!) и требовать полного перезапуска npm run dev. */
+if (import.meta.env.DEV) {
+  console.info(
+    `%c[API]%c VITE_API_URL = ${API_URL || "(пусто — демо-режим)"} · включён: ${isApiEnabled() ? "да" : "нет"}`,
+    "color:#5ee6a8;font-weight:bold",
+    "color:inherit"
+  );
+}
 
 /** Проверка доступности сервера (GET /api/health). Возвращает true, если бэкенд отвечает. */
 export async function checkBackendHealth(): Promise<boolean> {

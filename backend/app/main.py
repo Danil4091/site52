@@ -38,7 +38,21 @@ from .security import (
 )
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+# Разрешённые источники для CORS. По умолчанию — все типичные локальные
+# dev-порты фронтенда (Vite dev 3000/5173, preview 4173, прочее 8080),
+# оба хоста (localhost и 127.0.0.1). В проде задайте CORS_ORIGINS в .env.
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS",
+    ",".join(
+        f"{scheme}://{host}:{port}"
+        for scheme in ("http",)
+        for host in ("localhost", "127.0.0.1")
+        for port in (3000, 4173, 5173, 8080)
+    ),
+).split(",")
+# В разработке дополнительно разрешаем ЛЮБОЙ локальный порт (localhost:*),
+# чтобы предпросмотр и нестандартные порты тоже работали без настройки.
+CORS_ALLOW_LOCALHOST_ANY_PORT = os.getenv("CORS_ALLOW_LOCALHOST_ANY_PORT", "true").lower() == "true"
 
 # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "daniil")
@@ -96,7 +110,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Репетитор из Коми · API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    # В dev разрешаем любой источник (в т.ч. нестандартные порты и предпросмотр).
+    # В продакшене задайте CORS_ORIGINS и CORS_ALLOW_LOCALHOST_ANY_PORT=false в .env.
+    allow_origins=["*"] if CORS_ALLOW_LOCALHOST_ANY_PORT else CORS_ORIGINS,
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 

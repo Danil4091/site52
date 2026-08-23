@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Server, ServerOff } from "lucide-react";
-import { checkBackendHealth, isApiEnabled } from "./api";
+import { API_URL, checkBackendHealth, isApiEnabled } from "./api";
 
 /* ══════════════════════════════════════════════════════════════════
    Индикатор соединения с сервером в шапке.
@@ -36,21 +36,27 @@ export default function ConnectionBadge() {
   const meta = {
     demo: {
       label: "Демо-режим",
-      title: "Данные хранятся в вашем браузере. Подключите бэкенд (VITE_API_URL), чтобы видеть общую базу.",
+      title:
+        `VITE_API_URL = (пусто). Данные хранятся в вашем браузере.\n` +
+        `Создайте файл .env в КОРНЕ проекта (рядом с package.json) со строкой:\n` +
+        `VITE_API_URL=http://localhost:8000\n` +
+        `и полностью перезапустите npm run dev.`,
       dot: "bg-chalk-500",
       text: "text-chalk-400",
       icon: <ServerOff className="h-3.5 w-3.5" />,
     },
     online: {
       label: "Сервер подключён",
-      title: "Бэкенд отвечает. Данные синхронизируются с общей базой.",
+      title: `Бэкенд отвечает по адресу ${API_URL}.\nДанные синхронизируются с общей базой.`,
       dot: "bg-mark-green",
       text: "text-mark-green",
       icon: <Server className="h-3.5 w-3.5" />,
     },
     offline: {
       label: "Сервер недоступен",
-      title: "VITE_API_URL задан, но бэкенд не отвечает. Проверьте, запущен ли он.",
+      title:
+        `VITE_API_URL = ${API_URL}, но бэкенд не отвечает.\n` +
+        `Проверьте: запущен ли он (docker compose up -d) и открывается ли ${API_URL}/api/health.`,
       dot: "bg-mark-red",
       text: "text-mark-red",
       icon: <ServerOff className="h-3.5 w-3.5" />,
