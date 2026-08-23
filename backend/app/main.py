@@ -165,6 +165,7 @@ class TaskImportIn(BaseModel):
 
 
 class TaskOut(BaseModel):
+    """Полная задача (для преподавателя): с решением и критериями."""
     id: str
     exam_type: ExamType
     task_number: int
@@ -184,6 +185,33 @@ class TaskOut(BaseModel):
             solution_text=t.solution_text, is_second_part=t.is_second_part,
             difficulty_level=t.difficulty_level,
             criteria=t.criteria, image_url=t.image_url,
+        )
+
+
+class TaskStudentOut(BaseModel):
+    """Задача для ученика: БЕЗ решения, критериев и эталона.
+
+    Безопасность: публичные списки/ленты не должны отдавать решения —
+    иначе ученик получает все ответы разом, не решая. Разбор выдаётся
+    отдельным эндпоинтом только после верного решения.
+    """
+    id: str
+    exam_type: ExamType
+    task_number: int
+    topic: str
+    condition_text: str
+    is_second_part: bool
+    difficulty_level: int
+    image_url: Optional[str] = None
+
+    @classmethod
+    def from_orm_(cls, t: Task) -> "TaskStudentOut":
+        return cls(
+            id=str(t.id), exam_type=t.exam_type, task_number=t.task_number,
+            topic=t.topic, condition_text=t.condition_text,
+            is_second_part=t.is_second_part,
+            difficulty_level=t.difficulty_level,
+            image_url=t.image_url,
         )
 
 
@@ -236,13 +264,14 @@ async def import_tasks(body: TaskImportIn, db: AsyncSession = Depends(get_db)):
     return ImportReport(added=added, skipped=skipped, errors=errors)
 
 
-@app.get("/api/tasks", response_model=List[TaskOut])
+@app.get("/api/tasks", response_model=List[TaskStudentOut])
 async def list_tasks(
     exam_type: Optional[ExamType] = None,
     task_number: Optional[int] = Query(default=None, ge=1, le=25),
     topic: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
+    """Публичный список задач. Решения и критерии НЕ отдаются (TaskStudentOut)."""
     stmt = select(Task).where(Task.is_published.is_(True))
     if exam_type:
         stmt = stmt.where(Task.exam_type == exam_type)
@@ -251,7 +280,7 @@ async def list_tasks(
     if topic:
         stmt = stmt.where(Task.topic == topic)
     rows = (await db.execute(stmt.order_by(Task.task_number))).scalars().all()
-    return [TaskOut.from_orm_(t) for t in rows]
+    return [TaskStudentOut.from_orm_(t) for t in rows]
 
 
 @app.get("/api/tasks/topics")
@@ -320,8 +349,9 @@ async def topic_feed(
 
     end = None if limit is None else offset + limit
     items = unsolved[offset:end]
+    # Решения не отдаём (TaskStudentOut) — разбор только после верного решения.
     return {
-        "items": [TaskOut.from_orm_(t) for t in items],
+        "items": [TaskStudentOut.from_orm_(t) for t in items],
         "meta": {
             "total": len(pool),
             "solved": len(pool) - len(unsolved),
@@ -358,11 +388,42 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
             db.add(TaskProgress(user_id=uid, task_id=task.id))
             await db.commit()
 
+    # Безопасность: правильный ответ НИКОГДА не возвращается при неверном
+    # ответе — иначе ученик может отправить что угодно и прочитать эталон
+    # из ответа API, не решая задачу. Эталон отдаём только когда ответ верен
+    # (подтверждение). Показ разбора после неудачи должен идти через
+    # отдельный эндпоинт, который открывает решение только после попытки.
     return {
         "correct": correct,
         "normalized_given": normalize_answer(body.answer),
-        "normalized_answer": normalize_answer(task.correct_answer),
+        "normalized_answer": normalize_answer(task.correct_answer) if correct else None,
     }
+
+
+@app.get("/api/tasks/{task_id}/solution")
+async def get_solution(
+    task_id: str,
+    user_id: Optional[str] = None,  # в проде — из JWT
+    db: AsyncSession = Depends(get_db),
+):
+    """Разбор задачи — ТОЛЬКО после того, как ученик решил её верно.
+
+    Безопасность: решение не выдаётся «просто так». Проверяем, что у
+    ученика есть запись в task_progress (задача решена). Иначе 403.
+    """
+    task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Задача не найдена")
+    if not user_id:
+        raise HTTPException(403, "Разбор доступен только после решения")
+    solved = (await db.execute(
+        select(TaskProgress).where(
+            TaskProgress.user_id == uuid.UUID(user_id), TaskProgress.task_id == task.id
+        )
+    )).scalar_one_or_none()
+    if not solved:
+        raise HTTPException(403, "Разбор открывается после верного решения задачи")
+    return {"solution_text": task.solution_text, "criteria": task.criteria}
 
 
 # ─────────────────────────── регистрация ───────────────────────────
