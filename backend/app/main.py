@@ -377,22 +377,32 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
         raise HTTPException(400, "Задача части 2 проверяется преподавателем вручную")
 
     correct = answers_match(body.answer, task.correct_answer)
-    if correct and body.user_id:
+    if body.user_id:
         uid = uuid.UUID(body.user_id)
         existing = (await db.execute(
             select(TaskProgress).where(
                 TaskProgress.user_id == uid, TaskProgress.task_id == task.id
             )
         )).scalar_one_or_none()
-        if not existing:
-            db.add(TaskProgress(user_id=uid, task_id=task.id))
+        if existing is None:
+            # первая попытка — создаём запись (пока не решена)
+            db.add(TaskProgress(user_id=uid, task_id=task.id, solved=correct))
+            await db.commit()
+        else:
+            # каждая попытка учитывается; «решена» фиксируется один раз
+            existing.attempt_count = (existing.attempt_count or 0) + 1
+            if correct:
+                existing.solved = True
+                if existing.solved_at is None:
+                    from datetime import datetime, timezone as _tz
+                    existing.solved_at = datetime.now(_tz.utc)
             await db.commit()
 
     # Безопасность: правильный ответ НИКОГДА не возвращается при неверном
     # ответе — иначе ученик может отправить что угодно и прочитать эталон
     # из ответа API, не решая задачу. Эталон отдаём только когда ответ верен
-    # (подтверждение). Показ разбора после неудачи должен идти через
-    # отдельный эндпоинт, который открывает решение только после попытки.
+    # (подтверждение). Разбор после неудачи идёт через /solution, который
+    # открывает решение, если была хотя бы одна попытка.
     return {
         "correct": correct,
         "normalized_given": normalize_answer(body.answer),
@@ -406,24 +416,34 @@ async def get_solution(
     user_id: Optional[str] = None,  # в проде — из JWT
     db: AsyncSession = Depends(get_db),
 ):
-    """Разбор задачи — ТОЛЬКО после того, как ученик решил её верно.
+    """Разбор задачи — после того, как ученик СДЕЛАЛ ПОПЫТКУ.
 
-    Безопасность: решение не выдаётся «просто так». Проверяем, что у
-    ученика есть запись в task_progress (задача решена). Иначе 403.
+    Дизайн-решение: разбор открывается после любой попытки (верной или
+    неверной), а не только после верного решения. Это позволяет ученику
+    посмотреть разбор после неудачи и понять ошибку — так полезнее для
+    обучения. Безопасность сохраняется: без попытки (записи в
+    task_progress) разбор не выдаётся, иначе 403.
     """
     task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
     if not task:
         raise HTTPException(404, "Задача не найдена")
     if not user_id:
-        raise HTTPException(403, "Разбор доступен только после решения")
-    solved = (await db.execute(
+        raise HTTPException(403, "Разбор доступен после попытки решения")
+    progress = (await db.execute(
         select(TaskProgress).where(
             TaskProgress.user_id == uuid.UUID(user_id), TaskProgress.task_id == task.id
         )
     )).scalar_one_or_none()
-    if not solved:
-        raise HTTPException(403, "Разбор открывается после верного решения задачи")
-    return {"solution_text": task.solution_text, "criteria": task.criteria}
+    # Попытка была, если запись существует (она создаётся при первой проверке,
+    # даже неверной). attempt_count > 0 — явный признак сделанной попытки.
+    if not progress or not progress.attempt_count:
+        raise HTTPException(403, "Разбор открывается после попытки решения задачи")
+    return {
+        "solution_text": task.solution_text,
+        "criteria": task.criteria,
+        "attempts": progress.attempt_count,
+        "solved": progress.solved,
+    }
 
 
 # ─────────────────────────── регистрация ───────────────────────────
