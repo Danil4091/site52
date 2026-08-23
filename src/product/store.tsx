@@ -9,6 +9,7 @@ import {
   type ParsedVariant, type PublishedVariant,
 } from "./variantSchema";
 import { getForStudent, getAssignment, setStatus } from "./assignments";
+import { hasServerAuth, isApiEnabled, submitAttemptApi } from "./api";
 
 export interface ProductUser {
   /** Ник — единственный публичный идентификатор (виден в рейтинге). */
@@ -558,6 +559,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const newAttempt: AttemptRecord = { id: Date.now(), variantId: "v-real-2023", label: variantLabel, secondary, mistakes: incorrect > 0 ? Math.min(incorrect, 2) : 0, date: todayShort(), ts: Date.now(), taskResults };
     const bestBefore = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : 0;
     setAttempts((a) => [...a, newAttempt]);
+
+    /* Серверная синхронизация: если вошли через API, отправляем попытку в БД,
+       чтобы она стала видна преподавателю в кабинете. Не блокируем UI. */
+    if (hasServerAuth() && isApiEnabled()) {
+      submitAttemptApi(
+        "v-real-2023",
+        REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
+          task_number: t.number,
+          answer: (answers[t.number] ?? "").trim(),
+        })),
+      ).catch(() => { /* офлайн — останется в localStorage */ });
+    }
+
     if (secondary > bestBefore) {
       setTimeout(() => pushToast(`Новый личный рекорд: ${secondary} тестовых баллов!`), 700);
       addNotif({ type: "achievement", title: `Новый рекорд: ${secondary} баллов`, body: `Вы превзошли предыдущий лучший результат (${bestBefore}).` });

@@ -494,6 +494,10 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         "nickname": user.nickname,
         "teacher_id": str(teacher_id) if teacher_id else None,
         "recovery_code": recovery_code,  # показывается один раз
+        # Сразу выдаём токен, чтобы ученик мог работать с БД без повторного входа.
+        "token": create_token(str(user.id), user.role.value),
+        "role": user.role.value,
+        "user": _user_public(user),
     }
 
 
@@ -558,18 +562,45 @@ async def reset_student_password(
 # ══════════════════════════════════════════════════════════════════════
 
 class LoginIn(BaseModel):
-    email: str
+    email: Optional[str] = None
     password: str
+    # Универсальный вход: можно войти по нику (как на фронтенде) или по email.
+    nickname: Optional[str] = None
+
+
+def _user_public(user: User) -> dict:
+    """Публичное представление пользователя для фронтенда."""
+    return {
+        "id": str(user.id),
+        "nickname": user.nickname,
+        "full_name": user.full_name,
+        "role": user.role.value,
+        "email": user.email,
+        "teacher_id": str(user.teacher_id) if user.teacher_id else None,
+        "teacher_code": user.teacher_code,
+    }
 
 
 @app.post("/api/v1/auth/login")
 async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
-    """Вход: возвращает токен и роль. Пароли проверяются через bcrypt;
-    legacy plaintext-пароли (демо-аккаунты) при успешном входе
-    автоматически заменяются хешем (бесшовная миграция)."""
-    user = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+    """Вход по нику или email: возвращает токен, роль и профиль.
+
+    Пароли проверяются через bcrypt; legacy plaintext-пароли
+    (демо-аккаунты) при успешном входе автоматически заменяются хешем
+    (бесшовная миграция).
+    """
+    from .models import User
+    user: Optional[User] = None
+    if body.nickname:
+        user = (
+            await db.execute(select(User).where(User.nickname == body.nickname.strip().lower()))
+        ).scalar_one_or_none()
+    if user is None and body.email:
+        user = (
+            await db.execute(select(User).where(User.email == body.email.lower()))
+        ).scalar_one_or_none()
     if user is None or not verify_password(body.password, user.password_hash):
-        raise HTTPException(401, "Неверный e-mail или пароль")
+        raise HTTPException(401, "Неверный логин или пароль")
     # Бесшовная миграция: plaintext → bcrypt при первом успешном входе.
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
@@ -578,6 +609,7 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_db)):
         "token": create_token(str(user.id), user.role.value),
         "role": user.role.value,
         "nickname": user.nickname,
+        "user": _user_public(user),
     }
 
 
@@ -908,3 +940,136 @@ async def delete_material(
             pass
     await db.delete(m)
     await db.commit()
+
+
+# ═══════════════════ Попытки вариантов (связь с БД) ═══════════════════
+
+# Шкала ФИПИ: первичный балл (0–31) → тестовый (0–100). Совпадает с фронтендом.
+PRIMARY_TO_SECONDARY = {
+    0: 0, 1: 5, 2: 9, 3: 14, 4: 18, 5: 23, 6: 27, 7: 33, 8: 39, 9: 45, 10: 50,
+    11: 56, 12: 62, 13: 68, 14: 70, 15: 72, 16: 74, 17: 76, 18: 78, 19: 80,
+    20: 82, 21: 84, 22: 86, 23: 88, 24: 90, 25: 92, 26: 94, 27: 96, 28: 98,
+    29: 99, 30: 100, 31: 100,
+}
+
+
+def primary_to_secondary(primary: int) -> int:
+    return PRIMARY_TO_SECONDARY.get(max(0, min(31, primary)), 0)
+
+
+class AttemptTaskAnswer(BaseModel):
+    task_number: int
+    answer: str
+
+
+class AttemptSubmitIn(BaseModel):
+    variant_id: str
+    answers: List[AttemptTaskAnswer]
+    time_spent_seconds: Optional[int] = None
+
+
+@app.post("/api/v1/attempts/submit", status_code=201)
+async def submit_attempt(
+    body: AttemptSubmitIn,
+    student: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправка попытки: автопроверка части 1, подсчёт баллов, запись в БД.
+
+    Часть 1 проверяется сразу (по эталону), часть 2 — 0 баллов до ручной
+    проверки преподавателем. Попытка становится видна в кабинете репетитора.
+    """
+    from .models import AttemptStatus, TaskAttempt, VariantAttempt
+
+    try:
+        vid = uuid.UUID(body.variant_id)
+    except ValueError:
+        raise HTTPException(404, "Вариант не найден")
+    variant = (await db.execute(select(Variant).where(Variant.id == vid))).scalar_one_or_none()
+    if variant is None:
+        raise HTTPException(404, "Вариант не найден")
+
+    # Карта ответов ученика: номер → ответ.
+    given = {a.task_number: a.answer for a in body.answers}
+
+    primary = 0
+    task_rows = []
+    for t in variant.tasks_json:
+        if t.get("type") != "short_answer":
+            continue  # часть 2 — вручную
+        number = t.get("number")
+        reference = t.get("answer")
+        if not reference:
+            continue
+        ans = given.get(number)
+        if ans is None or not str(ans).strip():
+            status = AttemptStatus.SKIPPED
+        elif answers_match(str(ans), str(reference)):
+            status = AttemptStatus.CORRECT
+            primary += 1
+        else:
+            status = AttemptStatus.INCORRECT
+        task_rows.append((number, status, ans))
+
+    secondary = primary_to_secondary(primary)
+    attempt = VariantAttempt(
+        student_id=student.id,
+        variant_id=variant.id,
+        primary_score=primary,
+        secondary_score=secondary,
+    )
+    db.add(attempt)
+    await db.flush()  # чтобы получить attempt.id
+
+    # Записываем результат каждой задачи части 1.
+    tasks_by_number = {t.get("number"): t for t in variant.tasks_json}
+    for number, status, ans in task_rows:
+        t = tasks_by_number.get(number)
+        if not t or not t.get("id"):
+            continue
+        db.add(TaskAttempt(attempt_id=attempt.id, task_id=uuid.UUID(t["id"]), status=status, given_answer=ans))
+    await db.commit()
+
+    return {
+        "id": str(attempt.id),
+        "primary_score": primary,
+        "secondary_score": secondary,
+        "answered": len(task_rows),
+    }
+
+
+@app.get("/api/teacher/students")
+async def teacher_students(
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Кабинет репетитора: его ученики + статистика (баллы, попытки)."""
+    from .models import UserRole, VariantAttempt
+    from sqlalchemy import func as sa_func
+
+    students = (
+        await db.execute(select(User).where(User.teacher_id == teacher.id, User.role == UserRole.STUDENT))
+    ).scalars().all()
+
+    result = []
+    for s in students:
+        stats = (
+            await db.execute(
+                select(
+                    sa_func.count(VariantAttempt.id),
+                    sa_func.avg(VariantAttempt.secondary_score),
+                    sa_func.max(VariantAttempt.secondary_score),
+                ).where(VariantAttempt.student_id == s.id)
+            )
+        ).one()
+        attempts_count, avg_score, best_score = stats
+        result.append({
+            "id": str(s.id),
+            "nickname": s.nickname,
+            "full_name": s.full_name,
+            "attempts": int(attempts_count or 0),
+            "avg_score": round(float(avg_score), 1) if avg_score is not None else None,
+            "best_score": int(best_score) if best_score is not None else None,
+        })
+
+    return {"students": result}

@@ -4,13 +4,13 @@ import {
 } from "lucide-react";
 import { useApp } from "./store";
 import { LatexText } from "./ui";
-import { isApiEnabled, loginTeacher, uploadVariant } from "./api";
+import { hasServerAuth, isApiEnabled, uploadVariant } from "./api";
 import {
   sampleVariantJson, validateVariantJson, variantLink,
   type ParsedVariant, type PublishedVariant, type VariantValidationError,
 } from "./variantSchema";
 
-const TOKEN_KEY = "komi-teacher-token";
+
 
 /**
  * Загрузка и публикация авторских вариантов.
@@ -92,16 +92,12 @@ export default function VariantUploader() {
     if (!parsed || publishing) return;
     setPublishing(true);
 
-    if (isApiEnabled()) {
+    /* Серверный режим работает, только если пользователь вошёл через API
+       (есть JWT-токен) — иначе нет прав преподавателя. Токен подставляется
+       в запрос автоматически (apiFetch). */
+    if (isApiEnabled() && hasServerAuth()) {
       try {
-        // Токен преподавателя: берём сохранённый или логинимся (демо-доступ).
-        let token = localStorage.getItem(TOKEN_KEY) ?? "";
-        if (!token) {
-          const login = await loginTeacher("teacher@komi.ru", "1234");
-          token = login.token;
-          localStorage.setItem(TOKEN_KEY, token);
-        }
-        const res = await uploadVariant(parsed, token);
+        const res = await uploadVariant(parsed);
         const pub: PublishedVariant = {
           ...parsed,
           id: res.variant_id,

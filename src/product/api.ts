@@ -46,11 +46,44 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
+/* ─────────────────── Токен авторизации (JWT) ─────────────────── */
+
+const TOKEN_KEY = "komi-token-v1";
+
+/** Сохранить JWT-токен, полученный при входе/регистрации. */
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch { /* ок */ }
+}
+
+/** Текущий токен (null, если не вошли через сервер). */
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch { /* ок */ }
+}
+
+/** true, если есть живой серверный токен (авторизация через БД). */
+export const hasServerAuth = (): boolean => getToken() !== null;
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
+  /* Если есть токен — автоматически подставляем его в заголовок. */
+  const token = getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
   if (!res.ok) {
     const msg = await res.text().catch(() => `HTTP ${res.status}`);
     throw new Error(msg || `Ошибка ${res.status}`);
@@ -94,21 +127,92 @@ export interface VariantUploadResult {
   public_url: string;
 }
 
-/** Вход преподавателя → Bearer-токен (POST /api/v1/auth/login). */
-export function loginTeacher(email: string, password: string) {
-  return apiFetch<{ token: string; role: string; nickname: string }>("/api/v1/auth/login", {
+/** Публичный профиль пользователя, возвращаемый сервером. */
+export interface ApiUser {
+  id: string;
+  nickname: string;
+  full_name: string | null;
+  role: "student" | "teacher" | "admin";
+  email: string | null;
+  teacher_id: string | null;
+  teacher_code: string | null;
+}
+
+interface AuthResult {
+  token: string;
+  role: string;
+  nickname: string;
+  user: ApiUser;
+  recovery_code?: string;
+  teacher_id?: string | null;
+}
+
+/**
+ * Универсальный вход через сервер (по нику или email) → JWT-токен.
+ * Токен сохраняется автоматически (setToken) и дальше подставляется
+ * во все запросы. Возвращает профиль пользователя.
+ */
+export async function apiLogin(identifier: { nickname?: string; email?: string }, password: string): Promise<ApiUser> {
+  const res = await apiFetch<AuthResult>("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ ...identifier, password }),
+  });
+  setToken(res.token);
+  return res.user;
+}
+
+/**
+ * Регистрация через сервер. Возвращает профиль + резервный код
+ * (показывается один раз). Токен сохраняется автоматически.
+ */
+export async function apiRegister(data: {
+  nickname: string;
+  password: string;
+  full_name?: string;
+  email?: string;
+  teacher_code?: string;
+}): Promise<ApiUser & { recovery_code: string }> {
+  const res = await apiFetch<AuthResult & { recovery_code: string }>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  setToken(res.token);
+  return { ...res.user, recovery_code: res.recovery_code };
+}
+
+/**
+ * Публикация варианта на сервере (POST /api/v1/variants/upload, только преподаватель).
+ * Токен подставляется автоматически из сессии (apiFetch).
+ */
+export function uploadVariant(payload: unknown) {
+  return apiFetch<VariantUploadResult>("/api/v1/variants/upload", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
-/** Публикация варианта на сервере (POST /api/v1/variants/upload, только преподаватель). */
-export function uploadVariant(payload: unknown, token: string) {
-  return apiFetch<VariantUploadResult>("/api/v1/variants/upload", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
+/* ─────────────────── Попытки (связь с БД) ─────────────────── */
+
+/**
+ * Отправка попытки на сервер (POST /api/v1/attempts/submit).
+ * Автопроверка части 1 происходит на сервере; попытка становится видна
+ * преподавателю в кабинете. Требуется серверный токен (apiFetch подставит).
+ */
+export function submitAttemptApi(variantId: string, answers: { task_number: number; answer: string }[]) {
+  return apiFetch<{ id: string; primary_score: number; secondary_score: number; answered: number }>(
+    "/api/v1/attempts/submit",
+    { method: "POST", body: JSON.stringify({ variant_id: variantId, answers }) }
+  );
+}
+
+/** Ученики преподавателя со статистикой (GET /api/teacher/students). */
+export function fetchTeacherStudents() {
+  return apiFetch<{
+    students: {
+      id: string; nickname: string; full_name: string | null;
+      attempts: number; avg_score: number | null; best_score: number | null;
+    }[];
+  }>("/api/teacher/students");
 }
 
 /** Публичное получение варианта по UUID или короткому коду (GET /api/v1/variants/{id}). */

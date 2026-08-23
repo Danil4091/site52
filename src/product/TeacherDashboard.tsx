@@ -4,9 +4,10 @@ import {
   Clock, Copy, Flame, GraduationCap, KeyRound, PenLine, Send, Sparkles, Target, Trash2, TrendingUp, Users, XCircle,
 } from "lucide-react";
 import { useApp } from "./store";
-import { BANK, REAL_VARIANT } from "./data";
+import { BANK, REAL_VARIANT, type AttemptRecord, type TopicStat } from "./data";
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_TEACHER_CODE } from "./config";
 import { Avatar, LatexText } from "./ui";
+import { fetchTeacherStudents, hasServerAuth, isApiEnabled } from "./api";
 import {
   ensureDemoStudents, groupReport, linkedStudentNicks, readStudentStats, studentInsights, timeAgo,
   type ActivityEntry, type StudentStats,
@@ -112,11 +113,42 @@ export default function TeacherDashboard() {
   /* при первом открытии — демо-ученики (локальный режим) */
   useEffect(() => { ensureDemoStudents(); }, []);
 
+  /* Ученики из базы данных (когда преподаватель вошёл через API). */
+  const [dbStudents, setDbStudents] = useState<{ nickname: string; attempts: number; avg: number | null; best: number | null }[]>([]);
+  useEffect(() => {
+    if (!hasServerAuth() || !isApiEnabled()) return;
+    fetchTeacherStudents()
+      .then((r) =>
+        setDbStudents(
+          r.students.map((s) => ({ nickname: s.nickname, attempts: s.attempts, avg: s.avg_score, best: s.best_score })),
+        ),
+      )
+      .catch(() => { /* офлайн — остаются локальные */ });
+  }, []);
+
   const code = user?.teacherCode || ADMIN_TEACHER_CODE;
   const students = useMemo(() => {
     const linked = linkedStudentNicks(code);
-    return linked.map((l) => ({ ...readStudentStats(l.nick), goal: l.goal, registeredAt: l.registeredAt }));
-  }, [code]);
+    const local = linked.map((l) => ({ ...readStudentStats(l.nick), goal: l.goal, registeredAt: l.registeredAt }));
+    /* Добавляем учеников из БД, которых нет локально (по нику). */
+    const localNicks = new Set(local.map((s) => s.nick));
+    const fromDb = dbStudents
+      .filter((s) => !localNicks.has(s.nickname))
+      .map((s) => ({
+        nick: s.nickname,
+        attempts: [] as AttemptRecord[],
+        topics: {} as Record<number, TopicStat>,
+        streak: { days: 0, best: 0, last: "", xp: 0, freezes: 0 },
+        activity: [] as ActivityEntry[],
+        solvedCount: 0,
+        bestScore: s.best ?? 0,
+        avgScore: s.avg ?? 0,
+        lastActive: null as number | null,
+        registeredAt: 0,
+        goal: undefined as number | undefined,
+      }));
+    return [...local, ...fromDb];
+  }, [code, dbStudents]);
 
   const active = selected ? students.find((s) => s.nick === selected) ?? null : null;
 

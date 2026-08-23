@@ -4,6 +4,7 @@ import { useApp, loadSession, makeInviteCode, logReferral, type ProductUser } fr
 import { ADMIN_DISPLAY_NAME, ADMIN_NICKNAME, ADMIN_PASSWORD, ADMIN_TEACHER_CODE } from "./config";
 import { resolveTeacher } from "./variantSchema";
 import { generateRecoveryCode, saveRecoveryCode } from "./recovery";
+import { apiLogin, apiRegister, checkBackendHealth, isApiEnabled, type ApiUser } from "./api";
 import type { LegalDoc } from "./LegalDocs";
 
 type StoredUser = ProductUser & { password: string };
@@ -68,9 +69,22 @@ export default function AuthModal({
   const [goal, setGoal] = useState(80);
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   /* резервный код, выданный при регистрации — показывается один раз */
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
+
+  /** Преобразует серверный профиль (ApiUser) в локальный ProductUser. */
+  const toProductUser = (u: ApiUser): ProductUser => ({
+    nickname: u.nickname,
+    role: u.role === "teacher" || u.role === "admin" ? "teacher" : "student",
+    name: u.full_name ?? undefined,
+    email: u.email ?? undefined,
+    teacherId: u.teacher_id ?? undefined,
+    teacherCode: u.teacher_code ?? undefined,
+    consentVersion: "1.0",
+    consentAt: new Date().toISOString(),
+  });
 
   /* при первом открытии — гарантируем мастер-аккаунт преподавателя */
   useEffect(() => { seedAdminIfNeeded(); }, []);
@@ -146,13 +160,12 @@ export default function AuthModal({
 
   const cleanNick = (v: string) => v.trim().replace(/^@/, "").toLowerCase();
 
-  const submit = () => {
-    setError(null);
+  /* ── Локальный (автономный) режим — фолбэк, когда бэкенд не поднят ── */
+  const submitLocal = () => {
     const users = loadUsers();
     const nick = cleanNick(nickname);
 
     if (tab === "login") {
-      if (!nick) { setError("Введите ник"); return; }
       const found = users.find((u) => u.nickname === nick && u.password === password);
       if (!found) { setError("Неверный ник или пароль"); return; }
       const { password: _pw, ...rest } = found;
@@ -161,22 +174,11 @@ export default function AuthModal({
       return;
     }
 
-    /* ── регистрация ── */
-    if (!nick) { setError("Укажите ник — именно он будет виден в рейтинге"); return; }
-    if (!/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
-    if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
-    if (password !== password2) { setError("Пароли не совпадают"); return; }
-    if (!consent) { setError("Необходимо согласие на обработку персональных данных"); return; }
     if (users.some((u) => u.nickname === nick)) { setError("Такой ник уже занят — войдите или выберите другой"); return; }
-
     const code = invite.trim().toUpperCase();
     const teacherName = code ? resolveTeacher(code) : null;
-
-    /* реферальная система: ищем пользователя, чей код совпал */
     const referrer = users.find((u) => makeInviteCode(u.nickname) === code);
     if (referrer) logReferral(code, nick);
-
-    /* резервный код для восстановления пароля без почты */
     const recovery = generateRecoveryCode();
     saveRecoveryCode(nick, recovery);
 
@@ -184,7 +186,7 @@ export default function AuthModal({
       nickname: nick,
       role: "student",
       password,
-      goal, // целевой балл ЕГЭ — отображается пунктиром на графике аналитики
+      goal,
       teacherCode: code || undefined,
       teacherName: teacherName ?? undefined,
       referredBy: referrer ? referrer.nickname : undefined,
@@ -195,9 +197,68 @@ export default function AuthModal({
     const { password: _pw, ...rest } = user;
     login(rest);
     if (referrer) pushToast(`Бонус по приглашению от @${referrer.nickname}: +30 XP`);
-    /* показываем резервный код один раз — до закрытия этого экрана */
     setIssuedCode(recovery);
     setCodeCopied(false);
+  };
+
+  /* ── Серверный режим: авторизация через API, данные — в БД ── */
+  const submitServer = async (): Promise<boolean> => {
+    const nick = cleanNick(nickname);
+    try {
+      if (tab === "login") {
+        const u = await apiLogin({ nickname: nick }, password);
+        const prod = toProductUser(u);
+        prod.goal = goal;
+        login(prod);
+        onClose();
+        pushToast("Синхронизация с базой данных включена");
+        return true;
+      }
+      const code = invite.trim().toUpperCase() || undefined;
+      const res = await apiRegister({ nickname: nick, password, teacher_code: code });
+      const prod = toProductUser(res);
+      prod.goal = goal;
+      prod.teacherName = code ? resolveTeacher(code) ?? prod.teacherName : prod.teacherName;
+      login(prod);
+      setIssuedCode(res.recovery_code);
+      setCodeCopied(false);
+      pushToast("Аккаунт создан в базе данных");
+      return true;
+    } catch (e) {
+      /* серверная ошибка (неверный пароль, занятый ник) — показываем её */
+      setError(e instanceof Error ? e.message.replace(/^.*?:\s*/, "") : "Ошибка сервера");
+      return false;
+    }
+  };
+
+  /* ── Диспетчер: сервер, если доступен; иначе локально ── */
+  const submit = async () => {
+    if (busy) return;
+    setError(null);
+    const nick = cleanNick(nickname);
+
+    /* Общая валидация */
+    if (tab === "login") {
+      if (!nick) { setError("Введите ник"); return; }
+      if (!password) { setError("Введите пароль"); return; }
+    } else {
+      if (!nick) { setError("Укажите ник — именно он будет виден в рейтинге"); return; }
+      if (!/^[a-z0-9_]{3,16}$/.test(nick)) { setError("Ник: 3–16 символов, латиница, цифры и «_»"); return; }
+      if (password.length < 4) { setError("Пароль — минимум 4 символа"); return; }
+      if (password !== password2) { setError("Пароли не совпадают"); return; }
+      if (!consent) { setError("Необходимо согласие на обработку персональных данных"); return; }
+    }
+
+    /* Пробуем сервер; если его нет — работаем локально. */
+    if (isApiEnabled() && (await checkBackendHealth())) {
+      setBusy(true);
+      const ok = await submitServer();
+      setBusy(false);
+      if (!ok && tab === "login") return; // неверный пароль — не фолбэчим
+      if (!ok) return;
+      return;
+    }
+    submitLocal();
   };
 
   return (
@@ -322,8 +383,12 @@ export default function AuthModal({
 
         {error && <p className="mt-3 text-[12.5px] font-semibold text-mark-red">{error}</p>}
 
-        <button onClick={submit} className="mt-5 w-full rounded-lg bg-mark-yellow py-3 text-sm font-bold text-board-950 shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98]">
-          {tab === "login" ? "Войти" : "Создать аккаунт"}
+        <button
+          onClick={() => void submit()}
+          disabled={busy}
+          className="mt-5 w-full rounded-lg bg-mark-yellow py-3 text-sm font-bold text-board-950 shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+        >
+          {busy ? "Подключаемся к базе…" : tab === "login" ? "Войти" : "Создать аккаунт"}
         </button>
       </div>
     </div>

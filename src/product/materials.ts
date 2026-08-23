@@ -14,7 +14,13 @@
    ══════════════════════════════════════════════════════════════════ */
 
 import { deleteFileBlob, getFileBlob, isIndexedDbAvailable, saveFileBlob } from "./fileStorage";
-import { API_URL, isApiEnabled } from "./api";
+import { API_URL, getToken, isApiEnabled } from "./api";
+
+/** Заголовки с JWT-токеном (для запросов, требующих прав преподавателя). */
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 /* ─────────────────── серверное хранилище (когда подключён бэкенд) ───────────────────
    Когда VITE_API_URL задан и бэкенд отвечает, методички живут на сервере:
@@ -47,7 +53,8 @@ export async function uploadServerMaterial(
   meta: { title: string; tag: string; topic: string; part: number; pages: number },
   file: File,
 ): Promise<ServerMaterialMeta | null> {
-  if (!isApiEnabled()) return null;
+  /* Без серверного токена (преподаватель не вошёл через API) — фолбэк. */
+  if (!isApiEnabled() || !getToken()) return null;
   try {
     const fd = new FormData();
     fd.append("title", meta.title);
@@ -56,7 +63,11 @@ export async function uploadServerMaterial(
     fd.append("part", String(meta.part));
     fd.append("pages", String(meta.pages));
     fd.append("file", file);
-    const res = await fetch(`${API_URL}/api/materials/upload`, { method: "POST", body: fd });
+    const res = await fetch(`${API_URL}/api/materials/upload`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: fd,
+    });
     if (!res.ok) return null;
     return (await res.json()) as ServerMaterialMeta;
   } catch {
@@ -66,9 +77,12 @@ export async function uploadServerMaterial(
 
 /** Удаляет методичку на сервере (для преподавателя). */
 export async function deleteServerMaterial(serverId: string): Promise<void> {
-  if (!isApiEnabled()) return;
+  if (!isApiEnabled() || !getToken()) return;
   try {
-    await fetch(`${API_URL}/api/materials/${serverId}`, { method: "DELETE" });
+    await fetch(`${API_URL}/api/materials/${serverId}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
   } catch { /* ок */ }
 }
 
