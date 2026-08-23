@@ -367,8 +367,9 @@ export async function addMaterialWithFile(
   meta: Omit<StudyMaterial, "id" | "downloads" | "addedAt" | "kind" | "fileId" | "fileData">,
   file: File | null,
   fileDataUrl: string | null,
-): Promise<StudyMaterial> {
-  /* 1) Сервер (когда бэкенд подключён): файл живёт на сервере, виден всем. */
+): Promise<StudyMaterial & { savedTo: "server" | "local" }> {
+  /* 1) Сервер (когда бэкенд подключён и есть токен преподавателя):
+     файл живёт на сервере, виден всем ученикам. */
   if (file) {
     const serverMeta = await uploadServerMaterial(
       { title: meta.title, tag: meta.tag, topic: meta.topic, part: meta.part, pages: meta.pages },
@@ -379,9 +380,10 @@ export async function addMaterialWithFile(
         ...meta, id: `${SRV_PREFIX}${serverMeta.id}`, downloads: serverMeta.downloads,
         addedAt: Date.now(), kind: "file", fileId: `${SRV_PREFIX}${serverMeta.id}`,
         fileUrl: serverDownloadUrl(serverMeta.id), fileSizeKb: serverMeta.file_size_kb ?? undefined,
+        savedTo: "server",
       };
     }
-    /* сервер недоступен/ошибка — фолбэк на локальное хранилище ниже */
+    /* сервер недоступен / нет токена — фолбэк на локальное хранилище ниже */
   }
 
   /* 2) Локально: файл в IndexedDB, метаданные в localStorage. */
@@ -411,7 +413,7 @@ export async function addMaterialWithFile(
     if (fileId) { try { await deleteFileBlob(fileId); } catch { /* ок */ } }
     throw new Error("Не удалось сохранить данные методички. Попробуйте ещё раз.");
   }
-  return full;
+  return { ...full, savedTo: "local" };
 }
 
 export function removeMaterial(id: string): void {
@@ -474,17 +476,29 @@ export async function downloadFile(m: StudyMaterial): Promise<"file" | "url" | "
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
-  /* 0) серверная методичка — качаем готовый PDF с бэкенда */
+  /* 0) серверная методичка — качаем PDF с бэкенда.
+     Получаем файл через fetch и проверяем, что это именно PDF
+     (application/pdf). Если сервер вернул ошибку (HTML/JSON) —
+     НЕ скачиваем «хлам», а сообщаем, что файла нет. */
   if (m.fileId && m.fileId.startsWith(SRV_PREFIX)) {
-    const url = serverDownloadUrl(m.fileId.slice(SRV_PREFIX.length));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    return "url";
+    try {
+      const res = await fetch(serverDownloadUrl(m.fileId.slice(SRV_PREFIX.length)));
+      if (res.ok) {
+        const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+        const isPdf = ct.includes("pdf") || ct.includes("octet-stream");
+        if (isPdf) {
+          const blob = await res.blob();
+          if (blob.size > 0) {
+            triggerDownload(blob);
+            return "file";
+          }
+        }
+      }
+      /* Сервер вернул ошибку или не-PDF → файла по факту нет. */
+      return "none";
+    } catch {
+      return "none"; // сеть недоступна
+    }
   }
 
   /* 1) IndexedDB */

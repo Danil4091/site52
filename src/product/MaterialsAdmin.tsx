@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, FileText, Plus, Server, Trash2, UploadCloud } from "lucide-react";
+import { Download, FileText, LogOut, Plus, Server, Trash2, UploadCloud } from "lucide-react";
 import { useApp } from "./store";
 import { addMaterialWithFile, deleteServerMaterial, downloadFile, loadAllMaterials, printMaterialInNewWindow, removeMaterial, SRV_PREFIX, type StudyMaterial } from "./materials";
+import { checkBackendHealth, hasServerAuth, isApiEnabled } from "./api";
 
 /* Файлы хранятся в IndexedDB — лимит на порядки больше, чем у localStorage.
    50 МБ — мягкий потолок; в боевом режиме файл уйдёт на сервер, ограничений нет. */
@@ -63,7 +64,7 @@ export default function MaterialsAdmin() {
     if (saving) return;
     setSaving(true);
     try {
-      await addMaterialWithFile(
+      const saved = await addMaterialWithFile(
         {
           title: title.trim(),
           tag: tag.trim() || "Методичка",
@@ -81,7 +82,13 @@ export default function MaterialsAdmin() {
       setShowForm(false);
       setTitle(""); setTag(""); setFileUrl(""); setFileData(null); setFileObj(null); setFileMeta(null);
       if (fileRef.current) fileRef.current.value = "";
-      pushToast("Методичка опубликована — ученики уже могут её скачать");
+      /* Честно сообщаем, куда сохранилось: на сервер (видно всем) или
+         локально (демо-режим — видно только в этом браузере). */
+      pushToast(
+        saved.savedTo === "server"
+          ? "Методичка сохранена на сервере — ученики уже могут её скачать"
+          : "Сохранено локально (демо-режим): войдите через сервер, чтобы методичку видели ученики",
+      );
     } catch (e) {
       pushToast(e instanceof Error ? e.message : "Не удалось сохранить");
     } finally {
@@ -190,6 +197,11 @@ export default function MaterialsAdmin() {
               <p className="truncate text-[13px] font-bold text-chalk-50">
                 {m.title}
                 {m.kind === "demo" && <span className="ml-2 rounded-full bg-board-700 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-chalk-400">встроенная</span>}
+                {m.kind === "file" && (
+                  m.id.startsWith(SRV_PREFIX)
+                    ? <span className="ml-2 rounded-full bg-mark-green/15 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-mark-green" title="Файл на сервере — виден всем ученикам">на сервере</span>
+                    : <span className="ml-2 rounded-full bg-mark-red/15 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-mark-red" title="Демо-режим: файл в этом браузере, ученики его не видят. Войдите через сервер.">локально</span>
+                )}
               </p>
               <p className="mt-0.5 text-[11px] text-chalk-500">
                 {m.tag} · {m.topic} · {m.pages} стр. · <b className="text-mark-yellow">{m.downloads}</b> скачиваний
