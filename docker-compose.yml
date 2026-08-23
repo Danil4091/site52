@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════════
+#  Репетитор из Коми · docker-compose (PostgreSQL + FastAPI)
+#
+#  Запуск из корня проекта (site24/):
+#    docker compose up -d          — поднять базу + API
+#    docker compose logs -f api    — смотреть логи API
+#    docker compose down           — остановить
+#    docker compose down -v        — остановить и ПОЛНОСТЬЮ стереть БД
+#
+#  API будет на http://localhost:8000  (Swagger: /docs)
+#  База — на localhost:5432
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  # ─────────────── PostgreSQL ───────────────
+  db:
+    image: postgres:16-alpine
+    container_name: komi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-komi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-komi_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-repetytor}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Данные БД живут в именованном томе — переживают перезапуск контейнера.
+      # Сотрутся только при `docker compose down -v`.
+      - komi_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-komi} -d ${POSTGRES_DB:-repetytor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─────────────── FastAPI (бэкенд) ───────────────
+  api:
+    build:
+      context: ./backend        # Dockerfile лежит в backend/Dockerfile
+      dockerfile: Dockerfile
+    container_name: komi-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy   # API стартует только после готовности БД
+    environment:
+      # Внутри сети docker имя хоста базы = имя сервиса `db`.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-komi}:${POSTGRES_PASSWORD:-komi_secret}@db:5432/${POSTGRES_DB:-repetytor}
+      # Секрет для подписи токенов. ОБЯЗАТЕЛЬНО замени в продакшене!
+      HMAC_SECRET: ${HMAC_SECRET:-dev-secret-change-me}
+      # Откуда разрешены запросы (адрес фронтенда).
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      # Публичный адрес сайта — для ссылок на варианты (?variant=…).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+      # Автоматически создать таблицы при старте (true для разработки).
+      CREATE_TABLES: ${CREATE_TABLES:-true}
+      # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-daniil}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Pudov-Ege-2026}
+      ADMIN_TEACHER_CODE: ${ADMIN_TEACHER_CODE:-SYSOLA-PRO}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Даниил Андреевич Пудов}
+    ports:
+      - "8000:8000"
+
+volumes:
+  komi_pg:
