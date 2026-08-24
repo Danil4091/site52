@@ -10,10 +10,17 @@
 const RAW_ENV = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").trim();
 
 /**
- * Базовый URL API. Если VITE_API_URL не задан — корректный дефолт
- * http://localhost:8000 (локальный запуск «в одну команду»).
+ * Базовый URL API. Если VITE_API_URL не задан — берём тот же хост, с
+ * которого открыт сайт (window.location.hostname) + порт 8000. Это
+ * позволяет открывать сайт по локальному IP (http://192.168.x.x:5173):
+ * запросы пойдут на http://192.168.x.x:8000, а не на localhost, и будут
+ * работать с любого устройства в локальной сети.
  */
-export const API_URL: string = (RAW_ENV || "http://localhost:8000").replace(/\/+$/, "");
+const FALLBACK_HOST =
+  typeof window !== "undefined" && window.location.hostname
+    ? window.location.hostname
+    : "localhost";
+export const API_URL: string = (RAW_ENV || `http://${FALLBACK_HOST}:8000`).replace(/\/+$/, "");
 
 export const isApiEnabled = (): boolean => API_URL.length > 0;
 
@@ -213,6 +220,17 @@ export function fetchTeacherStudents() {
       attempts: number; avg_score: number | null; best_score: number | null;
     }[];
   }>("/api/teacher/students");
+}
+
+/** ВСЕ ученики из БД для «Статистики сайта» (GET /api/admin/students). */
+export function fetchAdminStudents() {
+  return apiFetch<{
+    students: {
+      id: string; nickname: string; full_name: string | null; goal: number | null;
+      streak_days: number; xp: number; created_at: string | null;
+      attempts: number; avg_score: number | null; best_score: number | null; solved: number;
+    }[];
+  }>("/api/admin/students");
 }
 
 /** Публичное получение варианта по UUID или короткому коду (GET /api/v1/variants/{id}). */

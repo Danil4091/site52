@@ -1073,3 +1073,57 @@ async def teacher_students(
         })
 
     return {"students": result}
+
+
+@app.get("/api/admin/students")
+async def admin_students(
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Статистика сайта: ВСЕ ученики из БД (не только привязанные к учителю).
+
+    Используется панелью «Статистика сайта» (SiteStatsPanel), чтобы
+    отображать реально зарегистрированных пользователей из БД, а не
+    локальную демо-копию. Доступно преподавателю/админу.
+    """
+    from .models import UserRole, VariantAttempt, TaskProgress
+    from sqlalchemy import func as sa_func
+
+    students = (
+        await db.execute(select(User).where(User.role == UserRole.STUDENT))
+    ).scalars().all()
+
+    result = []
+    for s in students:
+        stats = (
+            await db.execute(
+                select(
+                    sa_func.count(VariantAttempt.id),
+                    sa_func.avg(VariantAttempt.secondary_score),
+                    sa_func.max(VariantAttempt.secondary_score),
+                ).where(VariantAttempt.student_id == s.id)
+            )
+        ).one()
+        attempts_count, avg_score, best_score = stats
+        solved = (
+            await db.execute(
+                select(sa_func.count(TaskProgress.task_id)).where(
+                    TaskProgress.user_id == s.id, TaskProgress.solved == True
+                )
+            )
+        ).scalar()
+        result.append({
+            "id": str(s.id),
+            "nickname": s.nickname,
+            "full_name": s.full_name,
+            "goal": None,
+            "streak_days": s.streak_days,
+            "xp": s.xp,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "attempts": int(attempts_count or 0),
+            "avg_score": round(float(avg_score), 1) if avg_score is not None else None,
+            "best_score": int(best_score) if best_score is not None else None,
+            "solved": int(solved or 0),
+        })
+
+    return {"students": result}

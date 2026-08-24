@@ -6,6 +6,7 @@ import { BookOpenCheck, ClipboardList, Crown, Flame, GraduationCap, Target, Tren
 import type { AttemptRecord } from "./data";
 import type { TopicStat } from "./store";
 import { Avatar } from "./ui";
+import { fetchAdminStudents, hasServerAuth, isApiEnabled } from "./api";
 
 /* ══════════════════════════════════════════════════════════════════
    Статистика всего сайта — панель создателя платформы.
@@ -46,10 +47,35 @@ interface SiteData {
   topStudents: { nick: string; best: number; attempts: number; goal?: number }[];
 }
 
-function collect(): SiteData {
+/** Ученик из БД (GET /api/admin/students). */
+interface DbStudent {
+  id: string; nickname: string; full_name: string | null; goal: number | null;
+  streak_days: number; xp: number; created_at: string | null;
+  attempts: number; avg_score: number | null; best_score: number | null; solved: number;
+}
+
+function collect(dbStudents: DbStudent[] = []): SiteData {
   const users = readLS<LocalUser[]>("komi-users-v1", []);
-  const students = users.filter((u) => u.role === "student");
+  const localStudents = users.filter((u) => u.role === "student");
   const teachers = users.filter((u) => u.role === "teacher");
+  const dbMap = new Map(dbStudents.map((s) => [s.nickname, s]));
+
+  /* Объединяем локальных (демо) и серверных (БД) учеников по нику без дублей,
+     чтобы реально зарегистрированные пользователи отображались в статистике. */
+  const seen = new Set<string>();
+  const students: LocalUser[] = [];
+  for (const s of localStudents) {
+    if (!seen.has(s.nickname)) { seen.add(s.nickname); students.push(s); }
+  }
+  for (const s of dbStudents) {
+    if (!seen.has(s.nickname)) {
+      seen.add(s.nickname);
+      students.push({
+        nickname: s.nickname, role: "student", goal: s.goal ?? undefined,
+        registeredAt: s.created_at ? new Date(s.created_at).getTime() : undefined,
+      });
+    }
+  }
 
   let totalAttempts = 0;
   let sumSecondary = 0;
@@ -83,6 +109,23 @@ function collect(): SiteData {
   const top: SiteData["topStudents"] = [];
 
   for (const s of students) {
+    const db = dbMap.get(s.nickname);
+    if (db) {
+      /* Серверный ученик: статистика из БД. */
+      totalAttempts += db.attempts;
+      if (db.attempts > 0) {
+        sumSecondary += (db.avg_score ?? 0) * db.attempts;
+        const best = db.best_score ?? 0;
+        sumBest += best;
+        bestCount++;
+        const idx = bucketDefs.findIndex((b) => best >= b.min && best <= b.max);
+        if (idx >= 0) buckets[idx].count++;
+        top.push({ nick: s.nickname, best, attempts: db.attempts, goal: s.goal });
+      }
+      totalSolved += db.solved;
+      continue;
+    }
+    /* Локальный (демо) ученик: статистика из localStorage. */
     const attempts = readLS<AttemptRecord[]>(`komi-attempts-v1@${s.nickname}`, []);
     totalAttempts += attempts.length;
     let best = 0;
@@ -174,7 +217,19 @@ function Kpi({ icon: Icon, label, value, suffix, accent, delay }: {
 }
 
 export default function SiteStatsPanel() {
-  const data = useMemo(collect, []);
+  const [dbStudents, setDbStudents] = useState<DbStudent[]>([]);
+  /* Серверный режим: подгружаем реально зарегистрированных учеников из БД,
+     чтобы статистика сайта отражала базу, а не только локальную демо-копию. */
+  useEffect(() => {
+    let alive = true;
+    if (isApiEnabled() && hasServerAuth()) {
+      fetchAdminStudents()
+        .then((r) => { if (alive) setDbStudents(r.students); })
+        .catch(() => { /* офлайн — остаётся локальная статистика */ });
+    }
+    return () => { alive = false; };
+  }, []);
+  const data = useMemo(() => collect(dbStudents), [dbStudents]);
   const maxError = data.errorTopics[0]?.count ?? 1;
 
   return (

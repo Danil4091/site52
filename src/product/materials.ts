@@ -54,7 +54,14 @@ export async function uploadServerMaterial(
   file: File,
 ): Promise<ServerMaterialMeta | null> {
   /* Без серверного токена (преподаватель не вошёл через API) — фолбэк. */
-  if (!isApiEnabled() || !getToken()) return null;
+  if (!isApiEnabled()) {
+    console.warn("[materials] API выключен — файл сохранится локально.");
+    return null;
+  }
+  if (!getToken()) {
+    console.warn("[materials] Нет серверного токена: войдите через сервер (кнопка «Перезайти»), иначе файл сохранится только локально.");
+    return null;
+  }
   try {
     const fd = new FormData();
     fd.append("title", meta.title);
@@ -68,9 +75,13 @@ export async function uploadServerMaterial(
       headers: authHeaders(),
       body: fd,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[materials] Сервер отклонил загрузку: HTTP ${res.status}. Файл сохранится локально.`);
+      return null;
+    }
     return (await res.json()) as ServerMaterialMeta;
-  } catch {
+  } catch (e) {
+    console.warn("[materials] Ошибка загрузки на сервер, файл сохранится локально.", e);
     return null;
   }
 }
