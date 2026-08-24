@@ -40,21 +40,25 @@ from .security import (
 )
 
 # Все секреты и параметры — только из переменных окружения (см. .env.example).
-# Разрешённые источники для CORS. По умолчанию — все типичные локальные
-# dev-порты фронтенда (Vite dev 3000/5173, preview 4173, прочее 8080),
-# оба хоста (localhost и 127.0.0.1). В проде задайте CORS_ORIGINS в .env.
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    ",".join(
-        f"{scheme}://{host}:{port}"
-        for scheme in ("http",)
-        for host in ("localhost", "127.0.0.1")
-        for port in (3000, 4173, 5173, 8080)
-    ),
-).split(",")
-# В разработке дополнительно разрешаем ЛЮБОЙ локальный порт (localhost:*),
-# чтобы предпросмотр и нестандартные порты тоже работали без настройки.
-CORS_ALLOW_LOCALHOST_ANY_PORT = os.getenv("CORS_ALLOW_LOCALHOST_ANY_PORT", "true").lower() == "true"
+#
+# CORS — прод-безопасный:
+#   • Если CORS_ORIGINS задан (продакшен) — разрешены ТОЛЬКО перечисленные
+#     домены, например CORS_ORIGINS=https://репетитор-из-коми.ру
+#   • Иначе (девелопмент) — только локальные хосты и приватные LAN-адреса
+#     на любом порту (regex, НЕ "*"). Публичные домены не проходят.
+#   Никогда не используем allow_origins=["*"] вместе с credentials.
+_CORS_ORIGINS_ENV = os.getenv("CORS_ORIGINS", "").strip()
+if _CORS_ORIGINS_ENV:
+    ALLOWED_ORIGINS: List[str] = [o.strip() for o in _CORS_ORIGINS_ENV.split(",") if o.strip()]
+    ALLOWED_ORIGIN_REGEX: Optional[str] = None
+else:
+    ALLOWED_ORIGINS = []
+    ALLOWED_ORIGIN_REGEX = (
+        r"^https?://(localhost|127\.0\.0\.1"
+        r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$"
+    )
 
 # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "daniil")
@@ -119,6 +123,15 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
     # Папка для файлов методичек (рядом с uploads/).
     MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
+    # Продакшен-контроль: предупреждаем, если секреты не сменены с дефолтных.
+    from .security import HMAC_SECRET
+
+    if HMAC_SECRET in ("dev-secret-change-me", "change-me", ""):
+        print(
+            "[startup] ⚠️  HMAC_SECRET не сменён! Для продакшена задайте "
+            "HMAC_SECRET в .env (например, через `openssl rand -hex 32`)."
+        )
+
     try:
         await ensure_admin()
     except Exception as exc:  # не даём сбою сида уронить запуск API
@@ -133,12 +146,8 @@ app = FastAPI(title="Репетитор из Коми · API", lifespan=lifespan
 # из-за чего падала загрузка файлов с заголовком Authorization.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_origin_regex=(
-        r"https?://(localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?"
-        if CORS_ALLOW_LOCALHOST_ANY_PORT
-        else None
-    ),
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -251,47 +260,77 @@ async def health():
 
 # ─────────────────────────── задачи ───────────────────────────
 @app.post("/api/tasks/import", response_model=ImportReport)
-async def import_tasks(body: TaskImportIn, db: AsyncSession = Depends(get_db)):
-    """Массовая загрузка. Дубликаты (экзамен+номер+условие) пропускаются."""
+async def import_tasks(
+    body: TaskImportIn,
+    teacher: User = Depends(get_current_teacher),
+    db: AsyncSession = Depends(get_db),
+):
+    """Массовая загрузка задач (только преподаватель).
+
+    Валидация формата — в Pydantic (TaskImportIn): некорректный JSON
+    отклоняется ещё до входа (422). Дубликаты (экзамен+номер+условие)
+    пропускаются. Одна плохая строка НЕ губит весь батч: ошибки
+    собираются в отчёт, остальные строки сохраняются (savepoint на ряд).
+    """
     added = skipped = 0
     errors: List[str] = []
     for i, t in enumerate(body.tasks, start=1):
         if not t.is_second_part and not (t.correct_answer or "").strip():
             errors.append(f"задача {i}: для части 1 обязателен correct_answer")
             continue
-        dup = (await db.execute(
-            select(Task).where(
-                Task.exam_type == t.exam_type,
-                Task.task_number == t.task_number,
-                Task.condition_text == t.condition_text,
-            )
-        )).scalar_one_or_none()
-        if dup:
-            skipped += 1
-            continue
-        db.add(Task(**t.model_dump()))
-        added += 1
+        try:
+            dup = (await db.execute(
+                select(Task).where(
+                    Task.exam_type == t.exam_type,
+                    Task.task_number == t.task_number,
+                    Task.condition_text == t.condition_text,
+                )
+            )).scalar_one_or_none()
+            if dup:
+                skipped += 1
+                continue
+            async with db.begin_nested():  # savepoint: сбой строки откатывает только её
+                db.add(Task(**t.model_dump()))
+            added += 1
+        except Exception as exc:  # нарушение констрейнта и т.п. — не роняем батч
+            errors.append(f"задача {i}: {exc.__class__.__name__}")
     await db.commit()
     return ImportReport(added=added, skipped=skipped, errors=errors)
 
 
-@app.get("/api/tasks", response_model=List[TaskStudentOut])
+@app.get("/api/tasks")
 async def list_tasks(
     exam_type: Optional[ExamType] = None,
     task_number: Optional[int] = Query(default=None, ge=1, le=25),
     topic: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """Публичный список задач. Решения и критерии НЕ отдаются (TaskStudentOut)."""
-    stmt = select(Task).where(Task.is_published.is_(True))
+    """Публичный список задач с ПАГИНАЦИЕЙ (limit/offset) — держит 10 000+ записей.
+
+    Решения и критерии НЕ отдаются (TaskStudentOut). Сортировка стабильная
+    (task_number, id), чтобы страницы не «прыгали» между запросами.
+    """
+    from sqlalchemy import func as sa_func
+
+    base = select(Task).where(Task.is_published.is_(True))
     if exam_type:
-        stmt = stmt.where(Task.exam_type == exam_type)
+        base = base.where(Task.exam_type == exam_type)
     if task_number is not None:
-        stmt = stmt.where(Task.task_number == task_number)
+        base = base.where(Task.task_number == task_number)
     if topic:
-        stmt = stmt.where(Task.topic == topic)
-    rows = (await db.execute(stmt.order_by(Task.task_number))).scalars().all()
-    return [TaskStudentOut.from_orm_(t) for t in rows]
+        base = base.where(Task.topic == topic)
+
+    total = (await db.execute(select(sa_func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (
+        await db.execute(base.order_by(Task.task_number, Task.id).limit(limit).offset(offset))
+    ).scalars().all()
+
+    return {
+        "items": [TaskStudentOut.from_orm_(t) for t in rows],
+        "meta": {"total": int(total), "limit": limit, "offset": offset, "hasMore": offset + limit < total},
+    }
 
 
 @app.get("/api/tasks/topics")
@@ -341,33 +380,47 @@ async def topic_feed(
     внутри отфильтрованного списка (зеркалит демо-режим фронтенда).
     user_id временно передаётся параметром; в проде — из JWT.
     """
+    from sqlalchemy import func as sa_func
+
     uid = uuid.UUID(user_id) if user_id else None
 
-    solved_ids = []
+    pool_filter = [
+        Task.is_published.is_(True),
+        Task.task_number == number,
+        Task.is_second_part.is_(False),
+    ]
+    # Подзапрос id решённых ВЕРНО задач пользователя (использует PK user_id+task_id).
+    solved_subq = None
     if uid:
-        rows = (await db.execute(
-            select(TaskProgress.task_id).where(TaskProgress.user_id == uid)
-        )).scalars().all()
-        solved_ids = list(rows)
+        solved_subq = (
+            select(TaskProgress.task_id)
+            .where(TaskProgress.user_id == uid, TaskProgress.solved.is_(True))
+        )
 
-    stmt = (
-        select(Task)
-        .where(Task.is_published.is_(True), Task.task_number == number, Task.is_second_part.is_(False))
-        .order_by(Task.id)
-    )
-    pool = list((await db.execute(stmt)).scalars().all())
-    unsolved = [t for t in pool if t.id not in solved_ids]
+    base = select(Task).where(*pool_filter)
+    if solved_subq is not None:
+        base = base.where(Task.id.notin_(solved_subq))
+
+    # Пул и нерешённые считаем в SQL (COUNT), а не грузим всё в Python.
+    total = (await db.execute(select(sa_func.count()).select_from(base.subquery()))).scalar_one()
+    all_count = (
+        await db.execute(select(sa_func.count()).select_from(select(Task).where(*pool_filter).subquery()))
+    ).scalar_one()
 
     end = None if limit is None else offset + limit
-    items = unsolved[offset:end]
+    stmt = base.order_by(Task.id)
+    if limit is not None:
+        stmt = stmt.limit(limit).offset(offset)
+    items = (await db.execute(stmt)).scalars().all()
+
     # Решения не отдаём (TaskStudentOut) — разбор только после верного решения.
     return {
         "items": [TaskStudentOut.from_orm_(t) for t in items],
         "meta": {
-            "total": len(pool),
-            "solved": len(pool) - len(unsolved),
-            "remaining": len(unsolved),
-            "hasMore": end is not None and end < len(unsolved),
+            "total": int(all_count),
+            "solved": int(all_count - total),
+            "remaining": int(total),
+            "hasMore": end is not None and end < total,
         },
     }
 
