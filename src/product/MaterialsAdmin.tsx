@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, FileText, LogOut, Plus, Server, Trash2, UploadCloud } from "lucide-react";
 import { useApp } from "./store";
 import { addMaterialWithFile, deleteServerMaterial, downloadFile, loadAllMaterials, printMaterialInNewWindow, removeMaterial, SRV_PREFIX, type StudyMaterial } from "./materials";
-import { checkBackendHealth, hasServerAuth, isApiEnabled } from "./api";
+import { API_URL, checkBackendHealth, hasServerAuth, isApiEnabled } from "./api";
 
 /* Файлы хранятся в IndexedDB — лимит на порядки больше, чем у localStorage.
    50 МБ — мягкий потолок; в боевом режиме файл уйдёт на сервер, ограничений нет. */
@@ -148,10 +148,17 @@ export default function MaterialsAdmin() {
         </div>
       )}
       {serverMode === "no-server" && (
-        <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-board-600/60 bg-board-800/50 px-4 py-3">
-          <Server className="h-4 w-4 shrink-0 text-chalk-500" />
-          <p className="text-[12.5px] text-chalk-400">
-            Демо-режим: сервер не отвечает, файлы сохраняются в этом браузере. Запустите бэкенд (<code className="text-chalk-300">docker compose up -d</code>) и войдите заново.
+        <div className="mb-4 space-y-2 rounded-xl border border-board-600/60 bg-board-800/50 px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Server className="h-4 w-4 shrink-0 text-chalk-500" />
+            <p className="text-[12.5px] text-chalk-400">
+              Демо-режим: сервер не отвечает по адресу <code className="text-mark-yellow">{API_URL}</code>. Файлы сохраняются в этом браузере.
+            </p>
+          </div>
+          <p className="pl-6 text-[11.5px] leading-relaxed text-chalk-500">
+            Чтобы методички сохранялись на сервере: 1) запустите бэкенд — <code className="text-chalk-300">docker compose up -d</code>;
+            2) откройте сайт <b className="text-chalk-300">локально</b> — <code className="text-chalk-300">localhost:3000</code> или{" "}
+            <code className="text-chalk-300">IP-адрес:3000</code> (а не через предпросмотр); 3) войдите заново.
           </p>
         </div>
       )}

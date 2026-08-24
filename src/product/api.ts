@@ -53,6 +53,28 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
+/** Детальная диагностика подключения — чтобы видеть, ПОЧЕМУ файл не уходит на сервер. */
+export async function getConnectionInfo(): Promise<{
+  apiUrl: string;
+  online: boolean;
+  hasToken: boolean;
+  hint: string;
+}> {
+  const online = await checkBackendHealth();
+  const hasToken = getToken() !== null;
+  let hint = "Сервер подключён — методички будут сохраняться на сервере.";
+  if (!isApiEnabled()) {
+    hint = "API выключен (VITE_API_URL пуст). Файлы сохраняются локально.";
+  } else if (!online) {
+    hint =
+      `Сервер не отвечает по адресу ${API_URL}. Убедитесь, что бэкенд запущен ` +
+      "(docker compose up -d) и сайт открыт локально (localhost:5173 или IP:5173), а не через предпросмотр.";
+  } else if (!hasToken) {
+    hint = "Сервер онлайн, но нет токена: войдите через сервер (кнопка «Перезайти»), иначе файл сохранится только локально.";
+  }
+  return { apiUrl: API_URL, online, hasToken, hint };
+}
+
 /* ─────────────────── Токен авторизации (JWT) ─────────────────── */
 
 const TOKEN_KEY = "komi-token-v1";

@@ -127,11 +127,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Репетитор из Коми · API", lifespan=lifespan)
+# CORS: разрешаем ЛЮБОЙ локальный источник — localhost / 127.0.0.1 / локальный IP
+# с любым портом. Важно: используем allow_origin_regex (конкретный origin в ответе),
+# а не «*» вместе с allow_credentials — wildcard + credentials браузер блокирует,
+# из-за чего падала загрузка файлов с заголовком Authorization.
 app.add_middleware(
     CORSMiddleware,
-    # В dev разрешаем любой источник (в т.ч. нестандартные порты и предпросмотр).
-    # В продакшене задайте CORS_ORIGINS и CORS_ALLOW_LOCALHOST_ANY_PORT=false в .env.
-    allow_origins=["*"] if CORS_ALLOW_LOCALHOST_ANY_PORT else CORS_ORIGINS,
+    allow_origins=CORS_ORIGINS,
+    allow_origin_regex=(
+        r"https?://(localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?"
+        if CORS_ALLOW_LOCALHOST_ANY_PORT
+        else None
+    ),
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
