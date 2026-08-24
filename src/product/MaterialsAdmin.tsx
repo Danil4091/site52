@@ -11,9 +11,11 @@ const MAX_FILE_KB = 50 * 1024;
 /* Панель «Методички» в кабинете преподавателя:
    загрузка PDF (файл или ссылка), список со счётчиком скачиваний, удаление. */
 export default function MaterialsAdmin() {
-  const { pushToast } = useApp();
+  const { pushToast, logout } = useApp();
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [showForm, setShowForm] = useState(false);
+  /* Куда уходят файлы: на сервер (видны всем) или локально (демо). */
+  const [serverMode, setServerMode] = useState<"checking" | "ready" | "no-token" | "no-server">("checking");
   const [title, setTitle] = useState("");
   const [tag, setTag] = useState("");
   const [topic, setTopic] = useState("Алгебра");
@@ -29,6 +31,28 @@ export default function MaterialsAdmin() {
   /* Асинхронная загрузка списка: сервер (если подключён) + локальные + демо. */
   useEffect(() => {
     void loadAllMaterials().then(setMaterials);
+  }, []);
+
+  /* Определяем, куда реально уходят файлы при загрузке:
+     сервер+токен → «на сервере» (видны всем ученикам),
+     сервер без токена → локально (вошли до запуска бэкенда — надо перезайти),
+     нет сервера → демо-режим. */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!isApiEnabled()) {
+        if (alive) setServerMode("no-server");
+        return;
+      }
+      const ok = await checkBackendHealth();
+      if (!alive) return;
+      if (!ok) setServerMode("no-server");
+      else if (!hasServerAuth()) setServerMode("no-token");
+      else setServerMode("ready");
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const refresh = () => {
@@ -101,6 +125,37 @@ export default function MaterialsAdmin() {
 
   return (
     <div>
+      {/* Индикатор: куда уходят файлы. Главный кейс — вошли ДО запуска
+          бэкенда: сессия без токена, файлы падают локально, ученики их
+          не видят. Баннер объясняет и даёт кнопку «Перезайти». */}
+      {serverMode === "ready" && (
+        <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-mark-green/30 bg-mark-green/8 px-4 py-3">
+          <Server className="h-4 w-4 shrink-0 text-mark-green" />
+          <p className="text-[12.5px] text-mark-green">
+            Сервер подключён — файлы методичек сохраняются на сервере и видны всем ученикам.
+          </p>
+        </div>
+      )}
+      {serverMode === "no-token" && (
+        <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-xl border border-mark-yellow/40 bg-mark-yellow/8 px-4 py-3">
+          <Server className="h-4 w-4 shrink-0 text-mark-yellow" />
+          <p className="min-w-0 flex-1 text-[12.5px] text-mark-yellow">
+            Сервер работает, но вы вошли без серверной авторизации — методички сохраняются <b>локально</b> и не видны ученикам. Перезайдите в аккаунт, чтобы включить синхронизацию.
+          </p>
+          <button onClick={logout} className="btn-ghost !border-mark-yellow/50 !text-mark-yellow px-3 py-1.5 text-[11.5px] hover:!bg-mark-yellow/10">
+            <LogOut className="h-3.5 w-3.5" />Перезайти
+          </button>
+        </div>
+      )}
+      {serverMode === "no-server" && (
+        <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-board-600/60 bg-board-800/50 px-4 py-3">
+          <Server className="h-4 w-4 shrink-0 text-chalk-500" />
+          <p className="text-[12.5px] text-chalk-400">
+            Демо-режим: сервер не отвечает, файлы сохраняются в этом браузере. Запустите бэкенд (<code className="text-chalk-300">docker compose up -d</code>) и войдите заново.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-display text-xl font-bold text-chalk-50">Библиотека методичек</h2>
