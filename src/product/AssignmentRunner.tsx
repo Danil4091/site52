@@ -102,7 +102,7 @@ export default function AssignmentRunner() {
 
   const finish = () => {
     const score = assignment.kind === "variant"
-      ? SCALE[Math.min(correctCount, 12)] ?? correctCount
+      ? SCALE[Math.min(correctCount, 13)] ?? correctCount
       : Math.round((correctCount / Math.max(total, 1)) * 100);
     setFinished(true);
     completeAssignment(assignment.id, score);

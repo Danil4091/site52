@@ -54,7 +54,7 @@ export interface Assignment {
   kind: AssignmentKind;
   /** Для kind === "variant": id опубликованного варианта или "v-real-2023". */
   variantId?: string;
-  /** Для kind === "block": номер темы (1–12) и количество задач. */
+  /** Для kind === "block": номер темы части 1 (1–13) и количество задач. */
   topicNumber?: number;
   taskCount?: number;
   /** Для kind === "custom": конкретные задачи, выбранные из Банка. */

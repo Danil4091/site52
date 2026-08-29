@@ -1,7 +1,7 @@
 """Доменная модель «Репетитор из Коми» (PostgreSQL + SQLAlchemy 2.0).
 
 Поля задач — ровно по ТЗ:
-  id, exam_type (ege/oge), task_number (1–19), condition_text,
+  id, exam_type (ege/oge), task_number (ЕГЭ-2027: ч.1 №1–13, ч.2 №14–20; всего 20), condition_text,
   solution_text, correct_answer, is_second_part, difficulty_level.
 Плюс telegram_id у пользователей — задел под Telegram-бота
 (напоминания о стриках, мини-тесты).
@@ -95,7 +95,7 @@ class Task(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     exam_type: Mapped[ExamType] = mapped_column(PyEnum(ExamType, name="exam_type"), nullable=False)
-    task_number: Mapped[int] = mapped_column(Integer, nullable=False)          # 1–19 (ЕГЭ), до 25 (ОГЭ)
+    task_number: Mapped[int] = mapped_column(Integer, nullable=False)          # 1–20 (ЕГЭ-2027: ч.1 №1–13, ч.2 №14–20); до 25 (ОГЭ)
     topic: Mapped[str] = mapped_column(String(120), nullable=False)
     condition_text: Mapped[str] = mapped_column(Text, nullable=False)          # LaTeX: $…$ / $$…$$
     solution_text: Mapped[Optional[str]] = mapped_column(Text)

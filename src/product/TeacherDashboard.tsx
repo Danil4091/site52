@@ -267,7 +267,7 @@ export default function TeacherDashboard() {
                   </div>
                 ))}
               </div>
-              <p className="mt-4 text-[10.5px] font-semibold text-chalk-500">Успеваемость по темам (№1–12)</p>
+              <p className="mt-4 text-[10.5px] font-semibold text-chalk-500">Успеваемость по темам части 1 (№1–13)</p>
               <div className="mt-1.5"><TopicMiniMap topics={active.topics} /></div>
 
               {/* сброс пароля ученику — вместо восстановления по почте */}

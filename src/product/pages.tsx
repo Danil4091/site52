@@ -360,7 +360,7 @@ export function BankPage() {
       <p className="rise rise-2 mt-2 text-sm text-chalk-400">Цвет номера — ваш процент успешных решений. Раскройте тему и решите задачу прямо здесь.</p>
 
       <div className="rise rise-2 mt-5 flex flex-wrap gap-1.5">
-        {([[0, "Все 19"], [1, "Часть 1 · №1–12"], [2, "Часть 2 · №13–19"]] as [0 | 1 | 2, string][]).map(([k, label]) => (
+        {([[0, "Все 20"], [1, "Часть 1 · №1–13"], [2, "Часть 2 · №14–20"]] as [0 | 1 | 2, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setPart(k)}
             className={`inline-flex min-h-[44px] items-center rounded-full px-4 py-2 text-[12.5px] font-bold transition-all active:scale-95 ${part === k ? "bg-mark-yellow text-board-950 shadow-lg shadow-mark-yellow/20" : "card text-chalk-300 hover:text-chalk-50"}`}>
             {label}

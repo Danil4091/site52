@@ -120,7 +120,7 @@ export default function MarathonPage() {
           </div>
           <p className="mt-3 flex items-center gap-1.5 text-[12px] text-chalk-500">
             <Zap className="h-3.5 w-3.5 text-mark-yellow" />
-            Микс из реальных заданий №1–12 и теории вероятностей.
+            Микс из реальных заданий части 1 (№1–13) и теории вероятностей.
           </p>
           <button onClick={start} className="btn-gold mt-5 w-full justify-center py-4 text-[15px]">
             <Play className="h-5 w-5" /> Старт

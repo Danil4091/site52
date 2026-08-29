@@ -103,7 +103,7 @@ async def seed() -> None:
                 alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
                 short = "VAR-" + "".join(_secrets.choice(alphabet) for _ in range(6))
                 # первичные баллы части 2 по номерам (спецификация ФИПИ)
-                part2_points = {13: 2, 14: 2, 15: 2, 16: 2, 17: 3, 18: 4, 19: 4}
+                part2_points = {14: 2, 15: 2, 16: 2, 17: 2, 18: 3, 19: 4, 20: 4}
                 variant = Variant(
                     id=uuid.uuid4(),
                     short_code=short,

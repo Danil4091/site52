@@ -170,10 +170,10 @@ export function Heatmap({ stats, className = "" }: {
   };
   return (
     <div className={className}>
-      <p className="tick mb-2">Часть 1 · №1–12</p>
-      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">{Array.from({ length: 12 }, (_, i) => cell(i + 1))}</div>
-      <p className="tick mb-2 mt-4">Часть 2 · №13–19</p>
-      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">{Array.from({ length: 7 }, (_, i) => cell(i + 13))}</div>
+      <p className="tick mb-2">Часть 1 · №1–13</p>
+      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-[repeat(13,minmax(0,1fr))]">{Array.from({ length: 13 }, (_, i) => cell(i + 1))}</div>
+      <p className="tick mb-2 mt-4">Часть 2 · №14–20</p>
+      <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">{Array.from({ length: 7 }, (_, i) => cell(i + 14))}</div>
       <div className="mt-4 flex flex-wrap items-center gap-3 text-[10.5px] font-semibold text-chalk-500">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-green)" }} /> ≥ 80%</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-mark-yellow)" }} /> 50–79%</span>
