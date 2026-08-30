@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # авторизации (deps.py) импортировались без циклического импорта.
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
-from .models import Base, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TrainingMode, User, Variant
+from .models import Base, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TaskSkill, TrainingMode, User, Variant
 from .services.mastery_engine import background_recalculate
 from .services.readiness_engine import EXAM_MODES, background_recalculate_readiness
 from .security import (
@@ -155,6 +155,19 @@ app.add_middleware(
 
 
 # ─────────────────────────── схемы ───────────────────────────
+class TaskSkillIn(BaseModel):
+    """Один навык, проверяемый задачей (для построения иерархии).
+
+    ``subtopic_title`` — подтема, внутри которой живёт навык;
+    если подтемы ещё нет — она будет создана внутри линии.
+    ``weight`` — вес навыка для задачи (0.0–1.0): 1.0 = основной навык,
+    меньше — косвенный.
+    """
+    title: str = Field(min_length=1, max_length=200)
+    subtopic_title: str = Field(min_length=1, max_length=200)
+    weight: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class TaskIn(BaseModel):
     """Одна задача при импорте — формат совпадает с фронтендом."""
     exam_type: ExamType
@@ -170,6 +183,10 @@ class TaskIn(BaseModel):
     # Чертёж/график: https://… или data-URL image/….
     image_url: Optional[str] = Field(default=None, max_length=2000)
     source: Optional[str] = None
+    # Привязка к линии КИМ (1–20); None = использовать task_number.
+    line_number: Optional[int] = Field(default=None, ge=1, le=20)
+    # Навыки, проверяемые задачей (создаются/находятся автоматически).
+    skills: List[TaskSkillIn] = Field(default_factory=list)
 
     @field_validator("image_url")
     @classmethod
@@ -261,6 +278,71 @@ async def health():
 
 
 # ─────────────────────────── задачи ───────────────────────────
+async def create_task_with_skills(db: AsyncSession, t: TaskIn) -> Task:
+    """Создаёт задачу и иерархию «подтема → навык → TaskSkill».
+
+    Алгоритм для каждого навыка из ``t.skills``:
+      1) найти (по линии+названию) или создать Subtopic;
+      2) найти (по линии+подтеме+названию) или создать Skill;
+      3) создать связующую запись TaskSkill с указанным весом (без дублей).
+
+    Вынесена в отдельную функцию, чтобы логику можно было юнит-тестировать
+    независимо от HTTP-эндпоинта.
+    """
+    # Поля самой задачи (line_number и skills — не поля модели Task).
+    task_fields = t.model_dump(exclude={"line_number", "skills"})
+    task = Task(**task_fields)
+    db.add(task)
+    await db.flush()  # чтобы получить task.id
+
+    # Линия КИМ: явная line_number либо номер задания (для ЕГЭ они совпадают).
+    line_number = t.line_number or t.task_number
+
+    # Иерархия: для каждого навыка — подтема → навык → связь TaskSkill.
+    for sk in t.skills:
+        # 1) Найти или создать подтему внутри линии.
+        subtopic = (await db.execute(
+            select(Subtopic).where(
+                Subtopic.line_number == line_number,
+                Subtopic.title == sk.subtopic_title,
+            )
+        )).scalar_one_or_none()
+        if subtopic is None:
+            subtopic = Subtopic(line_number=line_number, title=sk.subtopic_title)
+            db.add(subtopic)
+            await db.flush()
+
+        # 2) Найти или создать навык внутри подтемы.
+        skill = (await db.execute(
+            select(Skill).where(
+                Skill.line_number == line_number,
+                Skill.subtopic_id == subtopic.id,
+                Skill.title == sk.title,
+            )
+        )).scalar_one_or_none()
+        if skill is None:
+            skill = Skill(
+                line_number=line_number,
+                subtopic_id=subtopic.id,
+                title=sk.title,
+                difficulty=t.difficulty_level,
+            )
+            db.add(skill)
+            await db.flush()
+
+        # 3) Связь Task → Skill с весом (без дублей).
+        existing_link = (await db.execute(
+            select(TaskSkill).where(
+                TaskSkill.task_id == task.id,
+                TaskSkill.skill_id == skill.id,
+            )
+        )).scalar_one_or_none()
+        if existing_link is None:
+            db.add(TaskSkill(task_id=task.id, skill_id=skill.id, weight=sk.weight))
+
+    return task
+
+
 @app.post("/api/tasks/import", response_model=ImportReport)
 async def import_tasks(
     body: TaskImportIn,
@@ -292,7 +374,7 @@ async def import_tasks(
                 skipped += 1
                 continue
             async with db.begin_nested():  # savepoint: сбой строки откатывает только её
-                db.add(Task(**t.model_dump()))
+                await create_task_with_skills(db, t)
             added += 1
         except Exception as exc:  # нарушение констрейнта и т.п. — не роняем батч
             errors.append(f"задача {i}: {exc.__class__.__name__}")
