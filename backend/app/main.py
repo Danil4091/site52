@@ -525,7 +525,10 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
         raise HTTPException(400, "Задача части 2 проверяется преподавателем вручную")
 
     correct = answers_match(body.answer, task.correct_answer)
+    skills_impacted: list = []
     if body.user_id:
+        from .models import AttemptStatus, TaskAttempt, VariantAttempt
+
         uid = uuid.UUID(body.user_id)
         existing = (await db.execute(
             select(TaskProgress).where(
@@ -535,7 +538,6 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
         if existing is None:
             # первая попытка — создаём запись (пока не решена)
             db.add(TaskProgress(user_id=uid, task_id=task.id, solved=correct))
-            await db.commit()
         else:
             # каждая попытка учитывается; «решена» фиксируется один раз
             existing.attempt_count = (existing.attempt_count or 0) + 1
@@ -544,7 +546,27 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
                 if existing.solved_at is None:
                     from datetime import datetime, timezone as _tz
                     existing.solved_at = datetime.now(_tz.utc)
-            await db.commit()
+
+        # Тренировочная сессия (без варианта) + попытка задачи, чтобы
+        # движок Mastery пересчитал уровень затронутых навыков.
+        session = VariantAttempt(student_id=uid, variant_id=None)
+        db.add(session)
+        await db.flush()
+        ta = TaskAttempt(
+            attempt_id=session.id,
+            task_id=task.id,
+            status=AttemptStatus.CORRECT if correct else AttemptStatus.INCORRECT,
+            given_answer=body.answer,
+            mode=TrainingMode.TOPIC_TRAINING,
+            difficulty=task.difficulty_level,
+        )
+        db.add(ta)
+        await db.flush()
+
+        # Пересчёт Mastery с возвратом дельты (синхронно, чтобы ученик
+        # сразу увидел изменение уровня навыка).
+        skills_impacted = await recalculate_with_diff(db, uid, [ta.id])
+        await db.commit()
 
     # Безопасность: правильный ответ НИКОГДА не возвращается при неверном
     # ответе — иначе ученик может отправить что угодно и прочитать эталон
@@ -555,6 +577,8 @@ async def check_task(task_id: str, body: CheckIn, db: AsyncSession = Depends(get
         "correct": correct,
         "normalized_given": normalize_answer(body.answer),
         "normalized_answer": normalize_answer(task.correct_answer) if correct else None,
+        # Навыки, затронутые попыткой, и изменение mastery по каждому.
+        "skills_impacted": skills_impacted,
     }
 
 

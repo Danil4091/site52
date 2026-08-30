@@ -192,7 +192,11 @@ class VariantAttempt(Base):
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("variants.id", ondelete="CASCADE"), nullable=False)
+    # NULL для тренировочных сессий (одиночные задачи из тренажёра) —
+    # полные варианты всегда имеют variant_id.
+    variant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("variants.id", ondelete="CASCADE"), nullable=True
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     primary_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     secondary_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

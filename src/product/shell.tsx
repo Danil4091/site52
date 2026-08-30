@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   BarChart3, BookOpenCheck, BookOpenText, CalendarDays, ClipboardList, Eraser, Flame, Home,
-  Library, LogIn, LogOut, Moon, Settings, Sun, Trophy, UserRound,
+  Library, LogIn, LogOut, Moon, Settings, Sun, Target, Trophy, UserRound,
 } from "lucide-react";
 import { useTheme } from "./theme";
 import { useApp, type Route } from "./store";
@@ -18,6 +18,7 @@ const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "variants", label: "Варианты", short: "Варианты", icon: ClipboardList },
   { key: "materials", label: "Теория", short: "Теория", icon: BookOpenText },
   { key: "mistakes", label: "Ошибки", short: "Ошибки", icon: Eraser },
+  { key: "skills", label: "Навыки", short: "Навыки", icon: Target },
   { key: "rating", label: "Рейтинг", short: "Рейтинг", icon: Trophy },
   { key: "analytics", label: "Аналитика", short: "Аналитика", icon: BarChart3 },
 ];
@@ -29,6 +30,7 @@ const MOBILE_STUDENT: { key: Route; label: string; icon: typeof Home }[] = [
   { key: "bank", label: "Банк", icon: Library },
   { key: "variants", label: "Варианты", icon: ClipboardList },
   { key: "materials", label: "Теория", icon: BookOpenText },
+  { key: "skills", label: "Навыки", icon: Target },
   { key: "analytics", label: "Аналитика", icon: BarChart3 },
   { key: "rating", label: "Рейтинг", icon: Trophy },
 ];
