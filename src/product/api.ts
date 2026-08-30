@@ -222,15 +222,99 @@ export function uploadVariant(payload: unknown) {
 
 /* ─────────────────── Попытки (связь с БД) ─────────────────── */
 
+export interface SkillImpact {
+  skill_id: string;
+  skill_title: string;
+  subtopic_title: string | null;
+  line_number: number;
+  weight: number;
+  mastery_before: number | null;
+  mastery_after: number;
+  mastery_delta: number;
+}
+
 /**
  * Отправка попытки на сервер (POST /api/v1/attempts/submit).
- * Автопроверка части 1 происходит на сервере; попытка становится видна
- * преподавателю в кабинете. Требуется серверный токен (apiFetch подставит).
+ * Передаёт контекст: time_spent (секунды на задачу) и mode
+ * (practice / topic_training / exam ...). Сервер возвращает
+ * skills_impacted — навыки, затронутые попыткой, и изменение mastery.
  */
-export function submitAttemptApi(variantId: string, answers: { task_number: number; answer: string }[]) {
-  return apiFetch<{ id: string; primary_score: number; secondary_score: number; answered: number }>(
-    "/api/v1/attempts/submit",
-    { method: "POST", body: JSON.stringify({ variant_id: variantId, answers }) }
+export function submitAttemptApi(
+  variantId: string,
+  answers: { task_number: number; answer: string; time_spent?: number | null }[],
+  mode: string = "practice",
+) {
+  return apiFetch<{
+    id: string;
+    primary_score: number;
+    secondary_score: number;
+    answered: number;
+    skills_impacted: SkillImpact[];
+  }>("/api/v1/attempts/submit", {
+    method: "POST",
+    body: JSON.stringify({ variant_id: variantId, answers, mode }),
+  });
+}
+
+/** Тип категории ошибки (ErrorPattern). */
+export type ErrorPatternType =
+  | "calculation" | "theory" | "model" | "method"
+  | "reading" | "time" | "careless" | "unknown";
+
+/** Классификация ошибки (POST /api/task_attempts/{id}/error_pattern). */
+export function classifyErrorPattern(taskAttemptId: string, pattern: ErrorPatternType) {
+  return apiFetch<{ task_attempt_id: string; pattern: string }>(
+    `/api/task_attempts/${taskAttemptId}/error_pattern`,
+    { method: "POST", body: JSON.stringify({ pattern }) }
+  );
+}
+
+/** Узел дерева навыков (mastery-профиль). */
+export interface SkillNode {
+  skill_id: string;
+  title: string;
+  difficulty: number;
+  mastery: number | null;
+  confidence: number | null;
+  attempts: number;
+  correct_attempts: number;
+  average_time: number | null;
+  last_practiced: string | null;
+  stability: number | null;
+}
+export interface SubtopicNode {
+  subtopic_id: string | null;
+  title: string;
+  order: number;
+  skills: SkillNode[];
+}
+export interface MasteryLine {
+  line_number: number;
+  subtopics: SubtopicNode[];
+}
+
+/** Дерево навыков: линия → подтема → навык (GET .../profile/mastery). */
+export function fetchMasteryProfile(studentId: string) {
+  return apiFetch<{ student_id: string; lines: MasteryLine[] }>(
+    `/api/students/${studentId}/profile/mastery`
+  );
+}
+
+export interface ReadinessLine {
+  line_number: number;
+  readiness: number | null;
+  confidence: number | null;
+  total_exam_attempts: number;
+  correct_exam_attempts: number;
+  average_exam_time: number | null;
+  last_exam_at: string | null;
+  aggregated_mastery: number | null;
+}
+
+/** Готовность к каждой линии (GET .../profile/readiness). */
+export function fetchReadinessProfile(studentId: string) {
+  return apiFetch<{ student_id: string; lines: ReadinessLine[] }>(
+    `/api/students/${studentId}/profile/readiness`
   );
 }
 

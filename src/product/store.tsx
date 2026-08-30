@@ -15,6 +15,8 @@ export interface ProductUser {
   /** Ник — единственный публичный идентификатор (виден в рейтинге). */
   nickname: string;
   role: "student" | "teacher";
+  /** ID пользователя на сервере (UUID) — для запросов профиля/аналитики. */
+  serverId?: string;
   /** Имя и e-mail — опциональны, не показываются публично. */
   name?: string;
   email?: string;
@@ -52,7 +54,7 @@ export function readReferrals(code: string): string[] {
 export type Route =
   | "home" | "bank" | "variants" | "probability" | "run" | "results"
   | "analytics" | "admin" | "rating" | "mistakes" | "achieve" | "trainer"
-  | "variant-run" | "marathon" | "assignment-run" | "profile" | "materials";
+  | "variant-run" | "marathon" | "assignment-run" | "profile" | "materials" | "skills";
 
 export interface TopicStat { solved: number; attempts: number; }
 export interface NotifItem { id: number; type: "achievement" | "lesson" | "feed" | "system" | "homework"; title: string; body: string; time: string; read: boolean; assignmentId?: string; }

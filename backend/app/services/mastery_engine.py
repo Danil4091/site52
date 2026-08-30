@@ -341,6 +341,76 @@ async def recalculate_for_task_attempts(db: AsyncSession, student_id, task_attem
     return updated
 
 
+async def recalculate_with_diff(
+    db: AsyncSession, student_id, task_attempt_ids
+) -> list[dict]:
+    """Синхронный пересчёт mastery с возвратом дельты (для ответа API).
+
+    Возвращает список словарей по затронутым навыкам:
+      skill_id, skill_title, subtopic_title, line_number, weight,
+      mastery_before, mastery_after, mastery_delta.
+
+    mastery_before — значение ДО пересчёта (None, если навык ещё не
+    оценивался); mastery_after — после пересчёта. Вызывается ВНУТРИ
+    запроса (не фоном), чтобы ученик сразу увидел изменение уровня.
+    """
+    from app.models import Subtopic
+
+    attempts = (
+        await db.execute(select(TaskAttempt).where(TaskAttempt.id.in_(list(task_attempt_ids))))
+    ).scalars().all()
+    task_ids = {a.task_id for a in attempts}
+    if not task_ids:
+        return []
+    links = (
+        await db.execute(select(TaskSkill).where(TaskSkill.task_id.in_(list(task_ids))))
+    ).scalars().all()
+    # Навык → вес для данной задачи (берём максимальный вес, если навык
+    # связан с несколькими задачами попытки).
+    skill_weights: dict = {}
+    for link in links:
+        prev = skill_weights.get(link.skill_id, 0.0)
+        skill_weights[link.skill_id] = max(prev, link.weight)
+
+    result: list[dict] = []
+    for skill_id, weight in skill_weights.items():
+        # ДО пересчёта.
+        before_row = (
+            await db.execute(
+                select(StudentSkill).where(
+                    StudentSkill.student_id == student_id,
+                    StudentSkill.skill_id == skill_id,
+                )
+            )
+        ).scalar_one_or_none()
+        mastery_before = before_row.mastery if before_row else None
+
+        # Пересчёт (сохраняет новое значение).
+        after_row = await recalculate_skill(db, student_id, skill_id)
+
+        skill = (await db.execute(select(Skill).where(Skill.id == skill_id))).scalar_one()
+        subtopic_title = None
+        if skill.subtopic_id:
+            st = (
+                await db.execute(select(Subtopic).where(Subtopic.id == skill.subtopic_id))
+            ).scalar_one_or_none()
+            subtopic_title = st.title if st else None
+
+        mastery_after = after_row.mastery
+        delta = round(mastery_after - (mastery_before or 0.0), 1)
+        result.append({
+            "skill_id": str(skill_id),
+            "skill_title": skill.title,
+            "subtopic_title": subtopic_title,
+            "line_number": skill.line_number,
+            "weight": weight,
+            "mastery_before": mastery_before,
+            "mastery_after": mastery_after,
+            "mastery_delta": delta,
+        })
+    return result
+
+
 async def background_recalculate(student_id, task_attempt_ids) -> None:
     """Точка входа для FastAPI BackgroundTasks.
 

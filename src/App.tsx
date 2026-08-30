@@ -15,6 +15,7 @@ const RatingPage = lazy(() => import("./product/pages2").then((m) => ({ default:
 const MistakesPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.MistakesPage })));
 const AdminPage = lazy(() => import("./product/pages2").then((m) => ({ default: m.AdminPage })));
 const TrainerPage = lazy(() => import("./product/TrainerPage"));
+const SkillsDashboard = lazy(() => import("./product/SkillsDashboard"));
 const PublishedVariantRunner = lazy(() => import("./product/PublishedVariantRunner"));
 const MarathonPage = lazy(() => import("./product/MarathonPage"));
 const TeacherDashboard = lazy(() => import("./product/TeacherDashboard"));
@@ -87,6 +88,7 @@ export default function App() {
             {route === "results" && <ResultsPage />}
             {route === "probability" && <ProbabilityPage />}
             {route === "analytics" && <AnalyticsPage />}
+            {route === "skills" && <SkillsDashboard />}
             {route === "rating" && <RatingPage />}
             {route === "mistakes" && <MistakesPage />}
             {route === "admin" && <AdminPage />}

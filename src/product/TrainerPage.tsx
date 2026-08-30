@@ -6,6 +6,7 @@ import { useApp } from "./store";
 import { BANK } from "./data";
 import { checkTaskAnswer, fetchTopicFeed, type FeedMeta, type FeedTask } from "./feed";
 import { AnswerInput, LatexText } from "./ui";
+import ErrorPatternPicker from "./ErrorPatternPicker";
 
 type ItemStatus = "open" | "wrong" | "solved";
 
@@ -43,6 +44,8 @@ export default function TrainerPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const celebrated = useRef(false);
+  /* id задач, для которых ученик уже классифицировал ошибку (показываем один раз) */
+  const [classified, setClassified] = useState<Set<string>>(new Set());
 
   const toItems = (tasks: FeedTask[]): QueueItem[] =>
     tasks.map((task) => ({ task, status: "open", given: "", revealed: false, checking: false, wrongTries: 0 }));
@@ -259,6 +262,14 @@ export default function TrainerPage() {
                     <p className="pop-in mt-2.5 text-[12px] font-semibold text-mark-red">
                       Не совпало. Проверьте запятую/точку и вычисления — или откройте разбор.
                     </p>
+                  )}
+                  {wrong && !classified.has(item.task.id) && (
+                    <div className="pop-in mt-3">
+                      <ErrorPatternPicker
+                        taskAttemptId={null}
+                        onDone={() => setClassified((s) => new Set(s).add(item.task.id))}
+                      />
+                    </div>
                   )}
                   {wrong && item.revealed && item.task.solution && (
                     <div className="pop-in mt-3 rounded-lg border border-mark-yellow/30 bg-mark-yellow/5 p-3.5">

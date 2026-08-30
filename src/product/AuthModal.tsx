@@ -78,6 +78,7 @@ export default function AuthModal({
   const toProductUser = (u: ApiUser): ProductUser => ({
     nickname: u.nickname,
     role: u.role === "teacher" || u.role === "admin" ? "teacher" : "student",
+    serverId: u.id,
     name: u.full_name ?? undefined,
     email: u.email ?? undefined,
     teacherId: u.teacher_id ?? undefined,

@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
 from .models import Base, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TaskSkill, TrainingMode, User, Variant
-from .services.mastery_engine import background_recalculate
+from .services.mastery_engine import recalculate_with_diff
 from .services.readiness_engine import EXAM_MODES, background_recalculate_readiness
 from .security import (
     create_token,
@@ -1204,14 +1204,15 @@ async def submit_attempt(
         created_task_attempt_ids.append(ta.id)
     await db.commit()
 
-    # Фоновые пересчёты — тяжёлая математика не увеличивает время ответа API.
+    # Mastery пересчитываем СИНХРОННО, чтобы вернуть ученику дельту уровня
+    # по каждому затронутому навыку (требование Этапа 7).
+    skills_impacted: list = []
     if created_task_attempt_ids:
-        # Mastery пересчитываем ВСЕГДА (навык закрепляется в любом режиме).
-        background_tasks.add_task(
-            background_recalculate, student.id, created_task_attempt_ids
+        skills_impacted = await recalculate_with_diff(
+            db, student.id, created_task_attempt_ids
         )
         # Readiness — ТОЛЬКО если попытка экзаменационная
-        # (exam / diagnostic / exam_simulation).
+        # (exam / diagnostic / exam_simulation) — фоном.
         if mode_enum in EXAM_MODES:
             background_tasks.add_task(
                 background_recalculate_readiness, student.id, created_task_attempt_ids
@@ -1222,6 +1223,8 @@ async def submit_attempt(
         "primary_score": primary,
         "secondary_score": secondary,
         "answered": len(task_rows),
+        # Навыки, затронутые попыткой, и изменение mastery по каждому.
+        "skills_impacted": skills_impacted,
     }
 
 
@@ -1367,3 +1370,138 @@ async def student_readiness_profile(
         })
 
     return {"student_id": str(sid), "lines": result}
+
+
+@app.get("/api/students/{student_id}/profile/mastery")
+async def student_mastery_profile(
+    student_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Дерево освоения навыков ученика (Этап 7).
+
+    Возвращает иерархию: линия КИМ → подтема → навык, где у каждого
+    навыка есть mastery (0–100), confidence, attempts, correct_attempts,
+    average_time, last_practiced, stability.
+
+    Фронтенд строит из этого дерево навыков и блок слабых мест.
+    """
+    from .models import StudentSkill, Subtopic
+
+    try:
+        sid = uuid.UUID(student_id)
+    except ValueError:
+        raise HTTPException(404, "Ученик не найден")
+
+    student = (await db.execute(select(User).where(User.id == sid))).scalar_one_or_none()
+    if student is None:
+        raise HTTPException(404, "Ученик не найден")
+
+    # Все навыки (группируем по line_number → subtopic).
+    skills = (await db.execute(select(Skill))).scalars().all()
+    subtopics = (await db.execute(select(Subtopic))).scalars().all()
+    subtopic_by_id = {st.id: st for st in subtopics}
+
+    # Освоение ученика по навыкам.
+    student_skills = (
+        await db.execute(select(StudentSkill).where(StudentSkill.student_id == sid))
+    ).scalars().all()
+    ss_by_skill = {ss.skill_id: ss for ss in student_skills}
+
+    lines: dict = {}
+    for sk in skills:
+        line_number = sk.line_number
+        st = subtopic_by_id.get(sk.subtopic_id)
+        subtopic_id = str(st.id) if st else None
+        subtopic_title = st.title if st else "Общее"
+        subtopic_order = st.order if st else 0
+
+        ss = ss_by_skill.get(sk.id)
+        skill_obj = {
+            "skill_id": str(sk.id),
+            "title": sk.title,
+            "difficulty": sk.difficulty,
+            "mastery": ss.mastery if ss else None,
+            "confidence": ss.confidence if ss else None,
+            "attempts": ss.attempts if ss else 0,
+            "correct_attempts": ss.correct_attempts if ss else 0,
+            "average_time": ss.average_time if ss else None,
+            "last_practiced": ss.last_practiced.isoformat() if (ss and ss.last_practiced) else None,
+            "stability": ss.stability if ss else None,
+        }
+
+        line = lines.setdefault(line_number, {})
+        key = (subtopic_id, subtopic_title, subtopic_order)
+        line.setdefault(key, []).append(skill_obj)
+
+    result = []
+    for line_number in sorted(lines.keys()):
+        subtopics_out = []
+        for (subtopic_id, subtopic_title, subtopic_order), skill_list in lines[line_number].items():
+            subtopics_out.append({
+                "subtopic_id": subtopic_id,
+                "title": subtopic_title,
+                "order": subtopic_order,
+                "skills": skill_list,
+            })
+        subtopics_out.sort(key=lambda s: s["order"])
+        result.append({"line_number": line_number, "subtopics": subtopics_out})
+
+    return {"student_id": str(sid), "lines": result}
+
+
+class ErrorPatternIn(BaseModel):
+    # calculation / theory / model / method / reading / time / careless / unknown
+    pattern: str
+
+
+@app.post("/api/task_attempts/{task_attempt_id}/error_pattern", status_code=201)
+async def classify_error_pattern(
+    task_attempt_id: str,
+    body: ErrorPatternIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Классификация ошибки (Этап 7).
+
+    Ученик или преподаватель выбирает категорию ошибки:
+    невнимательность, теория, вычисления, метод и т.д.
+    Категория влияет на снижение Mastery (careless слабее, чем theory).
+    """
+    from .models import ErrorPattern, TaskAttempt, TaskErrorPattern
+
+    try:
+        pattern_enum = ErrorPattern(body.pattern)
+    except ValueError:
+        raise HTTPException(400, f"Неизвестная категория ошибки: {body.pattern}")
+
+    try:
+        ta_id = uuid.UUID(task_attempt_id)
+    except ValueError:
+        raise HTTPException(404, "Попытка не найдена")
+
+    ta = (
+        await db.execute(select(TaskAttempt).where(TaskAttempt.id == ta_id))
+    ).scalar_one_or_none()
+    if ta is None:
+        raise HTTPException(404, "Попытка не найдена")
+
+    # Обновляем существующую классификацию или создаём новую.
+    existing = (
+        await db.execute(
+            select(TaskErrorPattern).where(TaskErrorPattern.task_attempt_id == ta_id)
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.pattern = pattern_enum
+        existing.assigned_by_user_id = user.id
+        existing.source = "teacher" if user.role == UserRole.TEACHER else "manual"
+    else:
+        db.add(TaskErrorPattern(
+            task_attempt_id=ta_id,
+            pattern=pattern_enum,
+            assigned_by_user_id=user.id,
+            source="teacher" if user.role == UserRole.TEACHER else "manual",
+        ))
+    await db.commit()
+
+    return {"task_attempt_id": task_attempt_id, "pattern": pattern_enum.value}
