@@ -93,7 +93,7 @@ function AttemptBreakdown({ attempt }: { attempt: AttemptRecord }) {
     []
   );
   const res = attempt.taskResults ?? {};
-  const numbers = Array.from({ length: 12 }, (_, i) => i + 1);
+  const numbers = REAL_VARIANT.filter((t) => t.part === 1).map((t) => t.number);
   const wrong = numbers.filter((n) => res[n] === "incorrect");
   const skipped = numbers.filter((n) => res[n] === "skipped");
   const correct = numbers.filter((n) => res[n] === "correct");

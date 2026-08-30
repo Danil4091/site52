@@ -59,7 +59,8 @@ function TopicMiniMap({ topics }: { topics: StudentStats["topics"] }) {
       </div>
     );
   };
-  return <div className="grid grid-cols-12 gap-1">{Array.from({ length: 12 }, (_, i) => cell(i + 1))}</div>;
+  const part1Numbers = BANK.filter((t) => t.part === 1).map((t) => t.number);
+  return <div className="grid grid-cols-6 gap-1 sm:grid-cols-[repeat(13,minmax(0,1fr))]">{part1Numbers.map((n) => cell(n))}</div>;
 }
 
 /* ─────────────────── лента активности ─────────────────── */

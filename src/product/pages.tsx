@@ -163,7 +163,7 @@ export function HomePage() {
               <span className="chip"><Timer className="h-3.5 w-3.5 text-mark-blue" />3 ч 55 мин</span>
             </div>
             <p className="mt-3 max-w-md text-[13.5px] leading-relaxed text-chalk-400">
-              19 заданий, автопроверка части 1, шкала перевода в тестовый балл.
+              20 заданий (часть 1: №1–13, часть 2: №14–20), автопроверка части 1, шкала перевода в тестовый балл.
               {unresolved > 0 && <> У вас <b className="text-mark-red">{unresolved}</b> неразобранных ошибок — вариант закроет сразу несколько.</>}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -423,7 +423,7 @@ export function VariantsPage() {
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-5">
       <p className="rise tick text-mark-yellow">Реальные КИМы</p>
       <h1 className="rise rise-1 mt-2 font-display text-3xl font-bold tracking-tight text-chalk-50 sm:text-4xl">Варианты</h1>
-      <p className="rise rise-2 mt-2 text-sm text-chalk-400">19 заданий, таймер 3 ч 55 мин, автопроверка части 1.</p>
+      <p className="rise rise-2 mt-2 text-sm text-chalk-400">20 заданий (часть 1: №1–13, часть 2: №14–20), таймер 3 ч 55 мин, автопроверка части 1.</p>
 
       <ul className="mt-6 space-y-3">
         {VARIANTS.map((v, i) => {
@@ -616,7 +616,7 @@ export function RunPage() {
               label={`№${task.number} · ${task.category}`}
               value={answers[task.number] ?? ""}
               onChange={setAns}
-              onSubmit={() => setCurrent((c) => Math.min(19, c + 1))}
+              onSubmit={() => setCurrent((c) => Math.min(REAL_VARIANT.length, c + 1))}
               placeholder={review ? "Ответ зафиксирован" : "Ответ — только цифры, «-» и «,»"}
               autoFocus={!review}
               readOnly={review}
@@ -650,7 +650,7 @@ export function RunPage() {
                   <Eye className="h-4 w-4" /> {revealed[task.number] ? "Скрыть решение" : "Показать решение"}
                 </button>
               )}
-              <button onClick={() => setCurrent((c) => Math.min(19, c + 1))} disabled={current === 19} className="btn-gold ml-auto px-5 py-2.5 text-[13px] disabled:opacity-30">Дальше →</button>
+              <button onClick={() => setCurrent((c) => Math.min(REAL_VARIANT.length, c + 1))} disabled={current === REAL_VARIANT.length} className="btn-gold ml-auto px-5 py-2.5 text-[13px] disabled:opacity-30">Дальше →</button>
             </div>
             {!review && <p className="mt-3 text-[10.5px] text-chalk-600">Подсвеченная клавиатура печатает в это поле и принимает только цифры, «-» и «,»</p>}
           </div>
@@ -712,7 +712,7 @@ export function ResultsPage() {
           <div className={`h-full rounded-full ${passed ? "bg-mark-green" : "bg-mark-yellow"} transition-all duration-1000`} style={{ width: `${r.secondary}%` }} />
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[["первичный", `${r.primary} / 12`], ["верно", String(r.correct)], ["ошибки", String(r.incorrect)], ["пропуски", String(r.skipped)]].map(([l, v]) => (
+          {[["первичный", `${r.primary} / ${REAL_VARIANT.filter((t) => t.part === 1).length}`], ["верно", String(r.correct)], ["ошибки", String(r.incorrect)], ["пропуски", String(r.skipped)]].map(([l, v]) => (
             <div key={l} className="rounded-lg border border-board-600/40 bg-board-800/50 px-3 py-3">
               <p className="font-display text-xl font-bold tabular-nums text-chalk-50">{v}</p>
               <p className="text-[10px] font-medium uppercase tracking-wide text-chalk-500">{l}</p>
