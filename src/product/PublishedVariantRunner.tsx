@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCircle2, Clock3, Flag, XCircle } from "lucide-react";
 import { useApp } from "./store";
 import { AnswerInput, LatexText } from "./ui";
 import Part2Task from "./Part2Task";
-import { answersMatch, SCALE } from "./data";
+import { answersMatch, MAX_PRIMARY_SCORE, SCALE } from "./data";
 import type { VariantTaskDef } from "./variantSchema";
 
 /**
@@ -57,7 +57,13 @@ export default function PublishedVariantRunner() {
   const correctCount = rows.filter((r) => r.correct).length;
   const primary = rows.reduce((s, r) => s + (r.correct ? r.task.points : 0), 0);
   const maxPrimary = short.reduce((s, t) => s + t.points, 0);
-  const secondary = maxPrimary > 0 ? (primary <= 31 ? (SCALE[primary] ?? Math.round((primary / maxPrimary) * 100)) : Math.round((primary / maxPrimary) * 100)) : 0;
+  /* Вторичный балл по шкале; для вариантов с нестандартной суммой баллов
+     (не 33) — пропорциональный пересчёт. */
+  const secondary = maxPrimary > 0
+    ? (maxPrimary === MAX_PRIMARY_SCORE && SCALE[primary] !== undefined
+        ? SCALE[primary]
+        : Math.round((primary / maxPrimary) * 100))
+    : 0;
   const mistakes = rows.filter((r) => r.given !== null && !r.correct).length;
 
   const submit = () => {

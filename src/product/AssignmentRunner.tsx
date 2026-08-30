@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, PenLine, XCircle } from "lucide-react";
 import { useApp } from "./store";
-import { PROB_PROBLEMS, REAL_VARIANT, SCALE, answersMatch } from "./data";
+import { PROB_PROBLEMS, PART1_COUNT, REAL_VARIANT, SCALE, answersMatch } from "./data";
 import { getAssignment, submitSolution, type PickedTask } from "./assignments";
 import { AnswerInput, LatexText } from "./ui";
 
@@ -101,8 +101,9 @@ export default function AssignmentRunner() {
   };
 
   const finish = () => {
+    /* Часть 1: максимум PART1_COUNT первичных баллов → тестовый по шкале. */
     const score = assignment.kind === "variant"
-      ? SCALE[Math.min(correctCount, 13)] ?? correctCount
+      ? SCALE[Math.min(correctCount, PART1_COUNT)] ?? correctCount
       : Math.round((correctCount / Math.max(total, 1)) * 100);
     setFinished(true);
     completeAssignment(assignment.id, score);

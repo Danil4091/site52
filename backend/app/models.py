@@ -154,7 +154,7 @@ class VariantAttempt(Base):
     __tablename__ = "variant_attempts"
     __table_args__ = (
         Index("ix_attempts_student", "student_id", "started_at"),
-        CheckConstraint("primary_score BETWEEN 0 AND 31", name="ck_attempts_primary"),
+        CheckConstraint("primary_score BETWEEN 0 AND 33", name="ck_attempts_primary"),
         CheckConstraint("secondary_score BETWEEN 0 AND 100", name="ck_attempts_secondary"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
