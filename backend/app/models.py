@@ -5,6 +5,17 @@
   solution_text, correct_answer, is_second_part, difficulty_level.
 Плюс telegram_id у пользователей — задел под Telegram-бота
 (напоминания о стриках, мини-тесты).
+
+Фундамент адаптивной системы (этап 3):
+  ExamTaskLine (20 линий ЕГЭ) → Subtopic → Skill → TaskSkill → Task.
+  StudentSkill — срез освоения навыка учеником (пока только структура,
+  расчёт Mastery — позже).
+  TaskAttempt — расширен: time_spent, difficulty, mode, hint_used,
+  solution_viewed — качественные данные для будущей аналитики.
+  ErrorPattern — классификация ошибок (пока назначается вручную,
+  автоопределение — позже).
+  TrainingSession — сессия тренировки (режим, план/факт, целевой навык).
+  Recommendation — заготовка под персональные рекомендации (модель, не алгоритм).
 """
 from __future__ import annotations
 
@@ -15,7 +26,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     Boolean, BigInteger, CheckConstraint, DateTime, Enum as PyEnum,
-    ForeignKey, Index, Integer, String, Text, UniqueConstraint, func,
+    Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -41,6 +52,28 @@ class UserRole(str, Enum):
     STUDENT = "student"
     TEACHER = "teacher"
     ADMIN = "admin"
+
+
+class TrainingMode(str, Enum):
+    """Режим, в котором решалась задача / проходила сессия."""
+    PRACTICE = "practice"                       # обычная тренировка
+    TOPIC_TRAINING = "topic_training"           # тренировка по теме
+    MIXED_TRAINING = "mixed_training"           # смешанная тренировка
+    DIAGNOSTIC = "diagnostic"                   # диагностический тест
+    EXAM = "exam"                               # полный вариант ЕГЭ
+    EXAM_SIMULATION = "exam_simulation"         # экзаменационная симуляция
+
+
+class ErrorPattern(str, Enum):
+    """Категории ошибок (пока назначаются вручную, автоопределение — позже)."""
+    CALCULATION = "calculation"   # вычислительная ошибка
+    THEORY = "theory"             # незнание теории
+    MODEL = "model"               # ошибка построения модели
+    METHOD = "method"             # неверный метод решения
+    READING = "reading"           # неверное прочтение условия
+    TIME = "time"                 # не хватило времени
+    CARELESS = "careless"         # невнимательность
+    UNKNOWN = "unknown"
 
 
 def _now():
@@ -175,6 +208,16 @@ class TaskAttempt(Base):
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[AttemptStatus] = mapped_column(PyEnum(AttemptStatus, name="attempt_status"), nullable=False)
     given_answer: Mapped[Optional[str]] = mapped_column(String(100))
+    # ── Фундамент адаптивной системы (этап 3) ──
+    time_spent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # секунды
+    difficulty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # 1–3
+    mode: Mapped[Optional[TrainingMode]] = mapped_column(
+        PyEnum(TrainingMode, name="training_mode"), nullable=True
+    )
+    hint_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    solution_viewed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    error_patterns: Mapped[List["TaskErrorPattern"]] = relationship(back_populates="task_attempt")
 
 
 class TaskProgress(Base):
@@ -221,4 +264,179 @@ class Material(Base):
     file_size_kb: Mapped[Optional[int]] = mapped_column(Integer)
     # Если файла на диске нет, может быть прямая ссылка.
     file_url: Mapped[Optional[str]] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Фундамент адаптивной системы (этап 3)
+# Иерархия знаний:  ExamTaskLine(20 линий) → Subtopic → Skill → TaskSkill → Task
+# Пока создаётся только структура данных; расчёт Mastery и Exam Readiness — позже.
+# ══════════════════════════════════════════════════════════════════════
+
+class Subtopic(Base):
+    """Подтема внутри линии ЕГЭ (например, «Производная» в линии №9)."""
+    __tablename__ = "subtopics"
+    __table_args__ = (
+        Index("ix_subtopics_line", "line_number"),
+        UniqueConstraint("line_number", "title", name="uq_subtopic_line_title"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)   # 1–20
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    skills: Mapped[List["Skill"]] = relationship(back_populates="subtopic")
+
+
+class Skill(Base):
+    """Атомарный навык (например, «Касательная к графику функции»).
+
+    Ссылается на линию (line_number) и подтему (subtopic_id).
+    prerequisites — JSONB-массив UUID навыков-пред prerequisites,
+    позволяет строить граф зависимостей (Производная → Геом. смысл → Касательная).
+    """
+    __tablename__ = "skills"
+    __table_args__ = (
+        Index("ix_skills_line", "line_number"),
+        Index("ix_skills_subtopic", "subtopic_id"),
+        CheckConstraint("difficulty BETWEEN 1 AND 3", name="ck_skills_difficulty"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)   # 1–20
+    subtopic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("subtopics.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    difficulty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # JSONB-массив UUID (строками) навыков, которые должны быть освоены раньше.
+    prerequisites: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    subtopic: Mapped[Optional["Subtopic"]] = relationship(back_populates="skills")
+    task_links: Mapped[List["TaskSkill"]] = relationship(back_populates="skill")
+    student_skills: Mapped[List["StudentSkill"]] = relationship(back_populates="skill")
+
+
+class TaskSkill(Base):
+    """Связь Task → Skill (M:N).
+
+    Одно задание может проверять один основной и несколько дополнительных
+    навыков; weight показывает, насколько навык важен для задачи (0.0–1.0).
+    """
+    __tablename__ = "task_skills"
+    __table_args__ = (
+        UniqueConstraint("task_id", "skill_id", name="uq_task_skill"),
+        Index("ix_task_skills_task", "task_id"),
+        Index("ix_task_skills_skill", "skill_id"),
+        CheckConstraint("weight BETWEEN 0 AND 1", name="ck_task_skill_weight"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+
+class StudentSkill(Base):
+    """Срез освоения навыка учеником.
+
+    Пока это только структура (значения по умолчанию 0/NULL);
+    расчёт mastery/confidence/stability будет добавлен позже.
+    """
+    __tablename__ = "student_skills"
+    __table_args__ = (
+        UniqueConstraint("student_id", "skill_id", name="uq_student_skill"),
+        Index("ix_student_skills_student", "student_id"),
+        Index("ix_student_skills_skill", "skill_id"),
+        CheckConstraint("mastery BETWEEN 0 AND 100", name="ck_student_skill_mastery"),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="ck_student_skill_confidence"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    mastery: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)        # 0–100
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)     # 0–100
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correct_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    average_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True)      # секунды
+    last_practiced: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    easy_accuracy: Mapped[Optional[float]] = mapped_column(Float, nullable=True)     # 0–100
+    medium_accuracy: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # 0–100
+    hard_accuracy: Mapped[Optional[float]] = mapped_column(Float, nullable=True)     # 0–100
+    stability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)         # 0–100
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    skill: Mapped["Skill"] = relationship(back_populates="student_skills")
+
+
+class TaskErrorPattern(Base):
+    """Классификация ошибки в попытке.
+
+    Назначается преподавателем или вручную; автоопределение (AI) — позже.
+    Одна попытка может иметь несколько категорий ошибок.
+    """
+    __tablename__ = "task_error_patterns"
+    __table_args__ = (
+        Index("ix_error_patterns_attempt", "task_attempt_id"),
+        UniqueConstraint("task_attempt_id", "pattern", name="uq_error_pattern_once"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_attempt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("task_attempts.id", ondelete="CASCADE"), nullable=False
+    )
+    pattern: Mapped[ErrorPattern] = mapped_column(PyEnum(ErrorPattern, name="error_pattern"), nullable=False)
+    # Кто назначил категорию: пользователь (преподаватель/ученик) или "auto".
+    assigned_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")  # manual/teacher/auto
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    task_attempt: Mapped["TaskAttempt"] = relationship(back_populates="error_patterns")
+
+
+class TrainingSession(Base):
+    """Сессия тренировки (обычная, по теме, смешанная, диагностика, экзамен...).
+
+    Позволит позже сравнивать обычную тренировку и экзаменационную.
+    """
+    __tablename__ = "training_sessions"
+    __table_args__ = (
+        Index("ix_training_sessions_student", "student_id", "started_at"),
+        Index("ix_training_sessions_target", "target_skill_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode: Mapped[TrainingMode] = mapped_column(PyEnum(TrainingMode, name="training_mode"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    planned_task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Целевой навык сессии (для тренировки по теме); NULL для смешанных/экзамена.
+    target_skill_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("skills.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class Recommendation(Base):
+    """Заготовка под персональные рекомендации (модель, не алгоритм).
+
+    Алгоритм формирования появится позже; пока это структура для хранения.
+    """
+    __tablename__ = "recommendations"
+    __table_args__ = (
+        Index("ix_recommendations_student", "student_id", "created_at"),
+        Index("ix_recommendations_skill", "skill_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recommended_task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")  # pending/accepted/completed/dismissed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -19,8 +19,51 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models import Base, ExamType, Task, User, UserRole, Variant, VariantTask
+from app.models import (
+    Base, ExamType, Skill, Subtopic, Task, User, UserRole, Variant, VariantTask,
+)
 from app.security import hash_password
+
+# Иерархия знаний: линия → подтемы → навыки (по структуре ЕГЭ-2027).
+# Используется для наполнения subtopics/skills (этап 3, фундамент данных).
+SKILL_HIERARCHY: dict[int, dict[str, list[str]]] = {
+    6: {  # Случайные величины и статистика (новая линия 2027)
+        "Распределение вероятностей": [
+            "Табличное распределение",
+            "Вычисление математического ожидания",
+            "Вычисление дисперсии и СКО",
+        ],
+    },
+    9: {  # Начала матанализа (производная сохранена здесь)
+        "Производная": [
+            "Нахождение производной по правилам",
+            "Геометрический смысл производной",
+            "Касательная к графику функции",
+        ],
+        "Экстремумы": [
+            "Критические точки",
+            "Наибольшее и наименьшее значение",
+        ],
+        "Первообразная и интеграл": [
+            "Нахождение первообразной",
+            "Площадь через интеграл",
+        ],
+    },
+    13: {  # Моделирование + экономика (новая линия 2027)
+        "Финансовые модели": [
+            "Проценты и кредиты",
+            "Вклады и капитализация",
+            "Расходы и доходы",
+        ],
+    },
+    17: {  # Математическое моделирование (часть 2, новая линия 2027)
+        "Математическая модель": [
+            "Построение модели",
+            "Исследование модели",
+            "Интерпретация результата",
+        ],
+    },
+}
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://komi:komi_secret@localhost:5432/repetytor"
@@ -30,6 +73,59 @@ JSON_PATH = Path(__file__).parent / "taskbank.json"
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def seed_skills_hierarchy(db: AsyncSession) -> None:
+    """Наполняет subtopics/skills по иерархии ЕГЭ-2027 (идемпотентно).
+
+    Создаёт только структуру (подтемы + навыки); расчёт Mastery и
+    привязка Task→Skill делаются отдельно. Не ломает существующие данные.
+    """
+    created_subtopics = created_skills = 0
+    for line_number, subtopics in SKILL_HIERARCHY.items():
+        for sub_index, (subtopic_title, skills) in enumerate(subtopics.items()):
+            subtopic = (
+                await db.execute(
+                    select(Subtopic).where(
+                        Subtopic.line_number == line_number,
+                        Subtopic.title == subtopic_title,
+                    )
+                )
+            ).scalar_one_or_none()
+            if subtopic is None:
+                subtopic = Subtopic(
+                    id=uuid.uuid4(),
+                    line_number=line_number,
+                    title=subtopic_title,
+                    order=sub_index,
+                )
+                db.add(subtopic)
+                await db.flush()
+                created_subtopics += 1
+            for sk_index, skill_title in enumerate(skills):
+                exists = (
+                    await db.execute(
+                        select(Skill).where(
+                            Skill.line_number == line_number,
+                            Skill.subtopic_id == subtopic.id,
+                            Skill.title == skill_title,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists is None:
+                    db.add(
+                        Skill(
+                            id=uuid.uuid4(),
+                            line_number=line_number,
+                            subtopic_id=subtopic.id,
+                            title=skill_title,
+                            difficulty=1,
+                            prerequisites=[],
+                        )
+                    )
+                    created_skills += 1
+    await db.commit()
+    print(f"[seed] иерархия навыков: +{created_subtopics} подтем, +{created_skills} навыков.")
 
 
 async def seed() -> None:
@@ -136,6 +232,9 @@ async def seed() -> None:
                 print(f"[seed] создан демо-вариант: «{variant.title}» ({len(by_number)} заданий, ссылка ?variant={short}).")
             else:
                 print("[seed] банк пуст — демо-вариант не создан.")
+
+        # ── иерархия навыков (подтемы + навыки, этап 3) ─────────────
+        await seed_skills_hierarchy(db)
 
     await engine.dispose()
 
