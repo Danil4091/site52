@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -29,7 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # авторизации (deps.py) импортировались без циклического импорта.
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
-from .models import Base, ExamType, Material, Task, User, Variant
+from .models import Base, ExamType, Material, Skill, Subtopic, StudentSkill, Task, User, Variant
+from .services.mastery_engine import background_recalculate
 from .security import (
     create_token,
     generate_recovery_code,
@@ -1035,6 +1036,7 @@ class AttemptSubmitIn(BaseModel):
 @app.post("/api/v1/attempts/submit", status_code=201)
 async def submit_attempt(
     body: AttemptSubmitIn,
+    background_tasks: BackgroundTasks,
     student: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1085,14 +1087,24 @@ async def submit_attempt(
     db.add(attempt)
     await db.flush()  # чтобы получить attempt.id
 
-    # Записываем результат каждой задачи части 1.
+    # Записываем результат каждой задачи части 1 и собираем их id.
+    created_task_attempt_ids = []
     tasks_by_number = {t.get("number"): t for t in variant.tasks_json}
     for number, status, ans in task_rows:
         t = tasks_by_number.get(number)
         if not t or not t.get("id"):
             continue
-        db.add(TaskAttempt(attempt_id=attempt.id, task_id=uuid.UUID(t["id"]), status=status, given_answer=ans))
+        ta = TaskAttempt(attempt_id=attempt.id, task_id=uuid.UUID(t["id"]), status=status, given_answer=ans)
+        db.add(ta)
+        created_task_attempt_ids.append(ta.id)
     await db.commit()
+
+    # Фоновый пересчёт mastery/confidence для затронутых навыков —
+    # тяжёлая математика не увеличивает время ответа API.
+    if created_task_attempt_ids:
+        background_tasks.add_task(
+            background_recalculate, student.id, created_task_attempt_ids
+        )
 
     return {
         "id": str(attempt.id),
