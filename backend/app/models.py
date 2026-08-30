@@ -440,3 +440,35 @@ class Recommendation(Base):
     recommended_task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")  # pending/accepted/completed/dismissed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class StudentExamLine(Base):
+    """Готовность ученика к конкретной линии КИМ (Этап 5).
+
+    Mastery — освоение навыка в любых условиях.
+    Exam Readiness — способность применить навыки линии в условиях стресса
+    и ограничения по времени (режимы exam / diagnostic / exam_simulation).
+    Ученик может иметь Mastery 90%, но Readiness 40%, если решает медленно
+    или ошибается на пробниках. Это РАЗНЫЕ показатели.
+    """
+    __tablename__ = "student_exam_lines"
+    __table_args__ = (
+        UniqueConstraint("student_id", "line_number", name="uq_student_exam_line"),
+        Index("ix_student_exam_lines_student", "student_id"),
+        Index("ix_student_exam_lines_line", "line_number"),
+        CheckConstraint("readiness BETWEEN 0 AND 100", name="ck_exam_line_readiness"),
+        CheckConstraint("confidence BETWEEN 0 AND 100", name="ck_exam_line_confidence"),
+        CheckConstraint("line_number BETWEEN 1 AND 20", name="ck_exam_line_number"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)          # 1–20
+    readiness: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)       # 0–100
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)      # 0–100
+    total_exam_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correct_exam_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    average_exam_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # секунды
+    last_exam_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

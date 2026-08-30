@@ -29,8 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # авторизации (deps.py) импортировались без циклического импорта.
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
-from .models import Base, ExamType, Material, Skill, Subtopic, StudentSkill, Task, User, Variant
+from .models import Base, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TrainingMode, User, Variant
 from .services.mastery_engine import background_recalculate
+from .services.readiness_engine import EXAM_MODES, background_recalculate_readiness
 from .security import (
     create_token,
     generate_recovery_code,
@@ -1025,12 +1026,18 @@ def primary_to_secondary(primary: int) -> int:
 class AttemptTaskAnswer(BaseModel):
     task_number: int
     answer: str
+    # Секунды, потраченные на задачу (для Time Penalty в Readiness). None = неизвестно.
+    time_spent: Optional[int] = None
 
 
 class AttemptSubmitIn(BaseModel):
     variant_id: str
     answers: List[AttemptTaskAnswer]
     time_spent_seconds: Optional[int] = None
+    # Режим попытки: practice / topic_training / mixed_training / diagnostic /
+    # exam / exam_simulation. Readiness пересчитывается только для
+    # exam / diagnostic / exam_simulation. None трактуется как practice.
+    mode: Optional[str] = None
 
 
 @app.post("/api/v1/attempts/submit", status_code=201)
@@ -1055,8 +1062,17 @@ async def submit_attempt(
     if variant is None:
         raise HTTPException(404, "Вариант не найден")
 
-    # Карта ответов ученика: номер → ответ.
+    # Карта ответов ученика: номер → ответ и номер → время (секунды).
     given = {a.task_number: a.answer for a in body.answers}
+    given_time = {a.task_number: a.time_spent for a in body.answers}
+
+    # Режим попытки: None трактуем как practice.
+    mode_enum: Optional[TrainingMode] = None
+    if body.mode:
+        try:
+            mode_enum = TrainingMode(body.mode)
+        except ValueError:
+            mode_enum = TrainingMode.PRACTICE
 
     primary = 0
     task_rows = []
@@ -1075,7 +1091,7 @@ async def submit_attempt(
             primary += 1
         else:
             status = AttemptStatus.INCORRECT
-        task_rows.append((number, status, ans))
+        task_rows.append((number, status, ans, given_time.get(number)))
 
     secondary = primary_to_secondary(primary)
     attempt = VariantAttempt(
@@ -1087,24 +1103,37 @@ async def submit_attempt(
     db.add(attempt)
     await db.flush()  # чтобы получить attempt.id
 
-    # Записываем результат каждой задачи части 1 и собираем их id.
+    # Записываем результат каждой задачи части 1 (с режимом и временем) и собираем id.
     created_task_attempt_ids = []
     tasks_by_number = {t.get("number"): t for t in variant.tasks_json}
-    for number, status, ans in task_rows:
+    for number, status, ans, time_spent in task_rows:
         t = tasks_by_number.get(number)
         if not t or not t.get("id"):
             continue
-        ta = TaskAttempt(attempt_id=attempt.id, task_id=uuid.UUID(t["id"]), status=status, given_answer=ans)
+        ta = TaskAttempt(
+            attempt_id=attempt.id,
+            task_id=uuid.UUID(t["id"]),
+            status=status,
+            given_answer=ans,
+            mode=mode_enum,
+            time_spent=time_spent,
+        )
         db.add(ta)
         created_task_attempt_ids.append(ta.id)
     await db.commit()
 
-    # Фоновый пересчёт mastery/confidence для затронутых навыков —
-    # тяжёлая математика не увеличивает время ответа API.
+    # Фоновые пересчёты — тяжёлая математика не увеличивает время ответа API.
     if created_task_attempt_ids:
+        # Mastery пересчитываем ВСЕГДА (навык закрепляется в любом режиме).
         background_tasks.add_task(
             background_recalculate, student.id, created_task_attempt_ids
         )
+        # Readiness — ТОЛЬКО если попытка экзаменационная
+        # (exam / diagnostic / exam_simulation).
+        if mode_enum in EXAM_MODES:
+            background_tasks.add_task(
+                background_recalculate_readiness, student.id, created_task_attempt_ids
+            )
 
     return {
         "id": str(attempt.id),
@@ -1203,3 +1232,56 @@ async def admin_students(
         })
 
     return {"students": result}
+
+
+@app.get("/api/students/{student_id}/profile/readiness")
+async def student_readiness_profile(
+    student_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Готовность ученика к каждой линии КИМ (Этап 5).
+
+    Возвращает массив по линиям 1–20:
+      line_number, readiness, confidence, total/correct exam attempts,
+      average_exam_time, last_exam_at,
+      а также aggregated_mastery — усреднённый Mastery навыков линии,
+      чтобы фронтенд показал разрыв: «знаешь на 90%, на экзамене — 40%».
+
+    НЕ прогнозирует общий тестовый балл (0–100) — только готовность к линиям.
+    """
+    from .services.readiness_engine import _aggregated_mastery_for_line
+
+    try:
+        sid = uuid.UUID(student_id)
+    except ValueError:
+        raise HTTPException(404, "Ученик не найден")
+
+    student = (await db.execute(select(User).where(User.id == sid))).scalar_one_or_none()
+    if student is None:
+        raise HTTPException(404, "Ученик не найден")
+
+    lines = (
+        await db.execute(
+            select(StudentExamLine).where(StudentExamLine.student_id == sid)
+        )
+    ).scalars().all()
+    by_line = {ln.line_number: ln for ln in lines}
+
+    result = []
+    for line_number in range(1, 21):
+        ln = by_line.get(line_number)
+        mastery = await _aggregated_mastery_for_line(db, sid, line_number)
+        result.append({
+            "line_number": line_number,
+            "readiness": ln.readiness if ln else None,
+            "confidence": ln.confidence if ln else None,
+            "total_exam_attempts": ln.total_exam_attempts if ln else 0,
+            "correct_exam_attempts": ln.correct_exam_attempts if ln else 0,
+            "average_exam_time": ln.average_exam_time if ln else None,
+            "last_exam_at": ln.last_exam_at.isoformat() if (ln and ln.last_exam_at) else None,
+            # Усреднённый Mastery навыков линии (None, если данных нет) —
+            # для показа разрыва «знаешь 90%, на экзамене 40%».
+            "aggregated_mastery": round(mastery * 100, 1) if mastery is not None else None,
+        })
+
+    return {"student_id": str(sid), "lines": result}
