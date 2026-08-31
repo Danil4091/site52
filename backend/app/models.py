@@ -127,7 +127,7 @@ class Task(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    exam_type: Mapped[ExamType] = mapped_column(PyEnum(ExamType, name="exam_type"), nullable=False)
+    exam_type: Mapped[ExamType] = mapped_column(PyEnum(ExamType, name="exam_type", create_type=False), nullable=False)
     task_number: Mapped[int] = mapped_column(Integer, nullable=False)          # 1–20 (ЕГЭ-2027: ч.1 №1–13, ч.2 №14–20); до 25 (ОГЭ)
     topic: Mapped[str] = mapped_column(String(120), nullable=False)
     condition_text: Mapped[str] = mapped_column(Text, nullable=False)          # LaTeX: $…$ / $$…$$
@@ -210,7 +210,7 @@ class TaskAttempt(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     attempt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("variant_attempts.id", ondelete="CASCADE"), nullable=False)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
-    status: Mapped[AttemptStatus] = mapped_column(PyEnum(AttemptStatus, name="attempt_status"), nullable=False)
+    status: Mapped[AttemptStatus] = mapped_column(PyEnum(AttemptStatus, name="attempt_status", create_type=False), nullable=False)
     given_answer: Mapped[Optional[str]] = mapped_column(String(100))
     # ── Фундамент адаптивной системы (этап 3) ──
     time_spent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # секунды
