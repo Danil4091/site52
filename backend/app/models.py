@@ -143,6 +143,10 @@ class Task(Base):
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # Обратная сторона M:N «задача ↔ навык» (через TaskSkill).
+    # Двусторонняя связь гарантирует корректную конфигурацию мапперов.
+    skill_links: Mapped[List["TaskSkill"]] = relationship(back_populates="task")
+
 
 class Variant(Base):
     """Вариант, загруженный преподавателем.
@@ -342,9 +346,12 @@ class TaskSkill(Base):
     skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
-    # Обратные связи M:N — без них SQLAlchemy падает с
+    # Обратные связи M:N. ОБЯЗАТЕЛЬНО двусторонние (back_populates с обеих
+    # сторон) — без них SQLAlchemy падает с
     # "Mapper[TaskSkill] has no property 'skill'".
-    task: Mapped["Task"] = relationship()
+    #   task  ↔ Task.skill_links
+    #   skill ↔ Skill.task_links
+    task: Mapped["Task"] = relationship(back_populates="skill_links")
     skill: Mapped["Skill"] = relationship(back_populates="task_links")
 
 
