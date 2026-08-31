@@ -216,7 +216,7 @@ class TaskAttempt(Base):
     time_spent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # секунды
     difficulty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)        # 1–3
     mode: Mapped[Optional[TrainingMode]] = mapped_column(
-        PyEnum(TrainingMode, name="training_mode"), nullable=True
+        PyEnum(TrainingMode, name="training_mode", create_type=False), nullable=True
     )
     hint_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     solution_viewed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -342,6 +342,11 @@ class TaskSkill(Base):
     skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
+    # Обратные связи M:N — без них SQLAlchemy падает с
+    # "Mapper[TaskSkill] has no property 'skill'".
+    task: Mapped["Task"] = relationship()
+    skill: Mapped["Skill"] = relationship(back_populates="task_links")
+
 
 class StudentSkill(Base):
     """Срез освоения навыка учеником.
@@ -392,7 +397,7 @@ class TaskErrorPattern(Base):
     task_attempt_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("task_attempts.id", ondelete="CASCADE"), nullable=False
     )
-    pattern: Mapped[ErrorPattern] = mapped_column(PyEnum(ErrorPattern, name="error_pattern"), nullable=False)
+    pattern: Mapped[ErrorPattern] = mapped_column(PyEnum(ErrorPattern, name="error_pattern", create_type=False), nullable=False)
     # Кто назначил категорию: пользователь (преподаватель/ученик) или "auto".
     assigned_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -415,7 +420,7 @@ class TrainingSession(Base):
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    mode: Mapped[TrainingMode] = mapped_column(PyEnum(TrainingMode, name="training_mode"), nullable=False)
+    mode: Mapped[TrainingMode] = mapped_column(PyEnum(TrainingMode, name="training_mode", create_type=False), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     planned_task_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
