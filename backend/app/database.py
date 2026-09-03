@@ -16,10 +16,13 @@ DATABASE_URL = os.getenv(
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
-Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Алиас для обратной совместимости (FastAPI Depends)
+Session = async_session_factory
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI-зависимость: сессия БД на время запроса."""
-    async with Session() as s:
+    async with async_session_factory() as s:
         yield s
