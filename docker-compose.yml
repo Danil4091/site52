@@ -7,7 +7,7 @@
 #    docker compose down           — остановить
 #    docker compose down -v        — остановить и ПОЛНОСТЬЮ стереть БД
 #
-#  API будет на http://localhost:8000  (Swagger: /docs)
+#  API будет на http://localhost:3000  (Swagger: /docs)
 #  База — на localhost:5432
 # ═══════════════════════════════════════════════════════════════════
 
@@ -56,9 +56,9 @@ services:
       # Секрет для подписи токенов. ОБЯЗАТЕЛЬНО замени в продакшене!
       HMAC_SECRET: ${HMAC_SECRET:-dev-secret-change-me}
       # Откуда разрешены запросы (адрес фронтенда).
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}
       # Публичный адрес сайта — для ссылок на варианты (?variant=…).
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       # Автоматически создать таблицы при старте (true для разработки).
       CREATE_TABLES: ${CREATE_TABLES:-true}
       # Мастер-аккаунт преподавателя (создаётся автоматически при старте).
@@ -67,7 +67,7 @@ services:
       ADMIN_TEACHER_CODE: ${ADMIN_TEACHER_CODE:-SYSOLA-PRO}
       ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Даниил Андреевич Пудов}
     ports:
-      - "8000:8000"
+      - "3000:8000"
     volumes:
       # Файлы методичек (PDF) живут в именованном томе — переживают
       # пересоздание контейнера. Без этого тома файлы терялись бы при
