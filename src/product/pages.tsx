@@ -520,20 +520,15 @@ export function VariantsPage() {
         </>
       )}
     </div>
-
-    {/* Модальный выбор режима для страницы вариантов */}
-    <ExamModeSelector
-      isOpen={modeSelectorOpen}
-      onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
-      onSelect={handleModeSelect}
-    />
   );
 }
 
 /* ═══════════════════════ РЕШЕНИЕ ВАРИАНТА ═══════════════════════ */
 const EXAM_SECONDS = 3 * 3600 + 55 * 60;
 function fmt(s: number) {
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
   return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
