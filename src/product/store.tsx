@@ -567,16 +567,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     /* Серверная синхронизация: если вошли через API, отправляем попытку в БД,
        чтобы она стала видна преподавателю в кабинете. Не блокируем UI. */
     if (hasServerAuth() && isApiEnabled()) {
-      /* Полный вариант — это экзаменационный режим (ограничение времени,
-         все задания подряд), поэтому mode="exam": бэкенд пересчитает
-         Exam Readiness по каждой линии (Этап 5). */
+      /* Отправляем режим, выбранный пользователем:
+         - mode="exam" -> бэкенд пересчитает Exam Readiness
+         - mode="practice" -> только прогресс по темам, готовность не меняется */
       submitAttemptApi(
         "v-real-2023",
         REAL_VARIANT.filter((t) => t.part === 1).map((t) => ({
           task_number: t.number,
           answer: (answers[t.number] ?? "").trim(),
         })),
-        "exam",
+        mode,
       ).catch(() => { /* офлайн — останется в localStorage */ });
     }
 

@@ -10,26 +10,23 @@ import ConnectionBadge from "./ConnectionBadge";
 import { levelFromXp } from "./ui";
 import { titleForLevel } from "./data";
 
-/* Десктопная навигация: 7 вкладок — чтобы логотип «Репетитор из Коми»
-   не вытеснялся. Тренажёр вероятностей доступен из «Банка заданий». */
+/* Десктопная навигация: 6 вкладок — убрана "Теория", так как материал доступен в Банке заданий */
 const NAV: { key: Route; label: string; short: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", short: "Главная", icon: Home },
   { key: "bank", label: "Банк заданий", short: "Банк", icon: Library },
   { key: "variants", label: "Варианты", short: "Варианты", icon: ClipboardList },
-  { key: "materials", label: "Теория", short: "Теория", icon: BookOpenText },
   { key: "mistakes", label: "Ошибки", short: "Ошибки", icon: Eraser },
   { key: "skills", label: "Навыки", short: "Навыки", icon: Target },
   { key: "rating", label: "Рейтинг", short: "Рейтинг", icon: Trophy },
   { key: "analytics", label: "Аналитика", short: "Аналитика", icon: BarChart3 },
 ];
 
-/* Нижняя навигация: 5 вкладок, весь функционал доступен максимум в 1–2 тапа.
-   Ошибки и ачивки — иконками в шапке/странице «Рейтинг», тренажёры — из Банка. */
+/* Нижняя навигация: 6 вкладок — убрана "Теория", материал доступен в Банке */
 const MOBILE_STUDENT: { key: Route; label: string; icon: typeof Home }[] = [
   { key: "home", label: "Главная", icon: Home },
   { key: "bank", label: "Банк", icon: Library },
   { key: "variants", label: "Варианты", icon: ClipboardList },
-  { key: "materials", label: "Теория", icon: BookOpenText },
+  { key: "mistakes", label: "Ошибки", icon: Eraser },
   { key: "skills", label: "Навыки", icon: Target },
   { key: "analytics", label: "Аналитика", icon: BarChart3 },
   { key: "rating", label: "Рейтинг", icon: Trophy },

@@ -423,6 +423,13 @@ export function BankPage() {
           <CalendarDays className="h-4 w-4" /> Собрать всё в вариант <ArrowRight className="h-4 w-4" />
         </button>
       </div>
+
+      {/* Модальный выбор режима решения варианта */}
+      <ExamModeSelector
+        isOpen={modeSelectorOpen}
+        onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
+        onSelect={handleModeSelect}
+      />
     </div>
   );
 }
@@ -519,6 +526,13 @@ export function VariantsPage() {
           </ul>
         </>
       )}
+
+      {/* Модальный выбор режима решения варианта */}
+      <ExamModeSelector
+        isOpen={modeSelectorOpen}
+        onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
+        onSelect={handleModeSelect}
+      />
     </div>
   );
 }
