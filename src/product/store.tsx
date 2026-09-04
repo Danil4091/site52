@@ -181,8 +181,8 @@ interface AppState {
   pushToast: (msg: string) => void;
   addNotif: (n: Omit<NotifItem, "id" | "time" | "read">) => void;
   markAllRead: () => void;
-  startVariant: (id: string) => void;
-  submitExam: (answers: Record<number, string>, secondsSpent: number, opts?: { navigate?: boolean }) => ExamResult;
+  startVariant: (id: string, mode?: ExamMode) => void;
+  submitExam: (answers: Record<number, string>, secondsSpent: number, opts?: { navigate?: boolean; mode?: ExamMode }) => ExamResult;
   toggleResolved: (number: number) => void;
   recordAnswer: (taskNumber: number, correct: boolean) => void;
   setProbBest: (pct: number) => void;
@@ -196,6 +196,7 @@ interface AppState {
 }
 
 export interface ExamRow { number: number; given: string | null; reference: string; status: "correct" | "incorrect" | "skipped"; solution?: string; }
+export type ExamMode = "practice" | "exam";
 export interface ExamResult {
   variantTitle: string; rows: ExamRow[];
   correct: number; incorrect: number; skipped: number;
@@ -514,13 +515,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ок */ }
   }, [user?.nickname]);
 
-  const startVariant = useCallback((id: string) => {
+  const startVariant = useCallback((id: string, mode: ExamMode = "exam") => {
     setVariantId(id);
     setRoute("run");
     window.scrollTo({ top: 0 });
   }, []);
 
-  const submitExam = useCallback((answers: Record<string, string>, secondsSpent: number, opts?: { navigate?: boolean }): ExamResult => {
+  const submitExam = useCallback((answers: Record<string, string>, secondsSpent: number, opts?: { navigate?: boolean; mode?: ExamMode }): ExamResult => {
+    const mode = opts?.mode ?? "exam";
     const variant = { title: "Основной период", year: 2023 };
     const rows: ExamRow[] = REAL_VARIANT.filter((t) => t.part === 1).map((t) => {
       const ref = t.answer ?? REAL_ANSWER_KEY[t.number] ?? "";

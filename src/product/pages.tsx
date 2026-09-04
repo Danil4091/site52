@@ -4,12 +4,13 @@ import {
   Lightbulb, MinusCircle, Play, Rocket, Snowflake, Sparkles, Target, Timer, Users, XCircle,
 } from "lucide-react";
 import { EGE_DATE_LABEL, EGE_DATE_NOTE } from "./config";
-import { FREEZE_COST, useApp, type CustomTask, type ExamResult } from "./store";
+import { FREEZE_COST, useApp, type CustomTask, type ExamResult, type ExamMode } from "./store";
 import {
   BANK, PROB_PROBLEMS, REAL_VARIANT, VARIANTS, answersMatch, daysUntilExam, getDailyTip, greeting,
 } from "./data";
 import { AnswerInput, Heatmap, LatexText, Sparkline, StreakFlame, TaskImage, XpBar } from "./ui";
 import { FloatingFormulas, useTypewriter } from "./shell";
+import ExamModeSelector from "./ExamModeSelector";
 
 /* ═══════════════════════ ГЛАВНАЯ ═══════════════════════ */
 
@@ -67,6 +68,22 @@ export function HomePage() {
     user, attempts, topicStats, mistakes, go, startVariant, streak, todaySolved,
     inviteCode, referrals, marathonBest, pushToast, buyFreeze,
   } = useApp();
+  const [modeSelectorOpen, setModeSelectorOpen] = useState(false);
+  const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+  
+  const handleStartVariant = (id: string) => {
+    setPendingVariantId(id);
+    setModeSelectorOpen(true);
+  };
+  
+  const handleModeSelect = (mode: ExamMode) => {
+    if (pendingVariantId) {
+      startVariant(pendingVariantId, mode);
+    }
+    setModeSelectorOpen(false);
+    setPendingVariantId(null);
+  };
+  
   const days = daysUntilExam();
   const best = attempts.length ? Math.max(...attempts.map((a) => a.secondary)) : null;
   const unresolved = mistakes.filter((m) => !m.resolved).length;
@@ -167,7 +184,7 @@ export function HomePage() {
               {unresolved > 0 && <> У вас <b className="text-mark-red">{unresolved}</b> неразобранных ошибок — вариант закроет сразу несколько.</>}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <button onClick={() => startVariant("v-real-2023")} className="btn-gold px-6 py-3.5 text-[15px]">
+              <button onClick={() => handleStartVariant("v-real-2023")} className="btn-gold px-6 py-3.5 text-[15px]">
                 <Play className="h-5 w-5" /> Решить вариант <ArrowRight className="h-4 w-4" />
               </button>
               <button onClick={() => go("bank")} className="btn-ghost px-5 py-3.5 text-[14px]">
@@ -413,6 +430,22 @@ export function BankPage() {
 /* ═══════════════════════ ВАРИАНТЫ ═══════════════════════ */
 export function VariantsPage() {
   const { attempts, startVariant, publishedVariants, runPublishedVariant } = useApp();
+  const [modeSelectorOpen, setModeSelectorOpen] = useState(false);
+  const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+  
+  const handleStartVariant = (id: string) => {
+    setPendingVariantId(id);
+    setModeSelectorOpen(true);
+  };
+  
+  const handleModeSelect = (mode: ExamMode) => {
+    if (pendingVariantId) {
+      startVariant(pendingVariantId, mode);
+    }
+    setModeSelectorOpen(false);
+    setPendingVariantId(null);
+  };
+  
   const bestBy = useMemo(() => {
     const m = new Map<string, number>();
     for (const a of attempts) { const c = m.get(a.variantId); if (c === undefined || a.secondary > c) m.set(a.variantId, a.secondary); }
@@ -449,10 +482,10 @@ export function VariantsPage() {
                       <div className="font-display text-lg font-bold tabular-nums text-mark-yellow">{score}</div>
                       <div className="text-[10px] font-medium uppercase tracking-wide text-chalk-500">ваш балл</div>
                     </div>
-                    <button onClick={() => startVariant(v.id)} className="btn-ghost px-4 py-2.5 text-sm">Ещё раз</button>
+                    <button onClick={() => handleStartVariant(v.id)} className="btn-ghost px-4 py-2.5 text-sm">Ещё раз</button>
                   </div>
                 ) : (
-                  <button onClick={() => startVariant(v.id)} className="btn-gold px-5 py-2.5 text-sm">Начать <ArrowRight className="h-4 w-4" /></button>
+                  <button onClick={() => handleStartVariant(v.id)} className="btn-gold px-5 py-2.5 text-sm">Начать <ArrowRight className="h-4 w-4" /></button>
                 )}
               </div>
             </li>
@@ -837,5 +870,12 @@ export function ProbabilityPage() {
         })}
       </ul>
     </div>
+    
+    {/* Модальный выбор режима для главной страницы */}
+    <ExamModeSelector
+      isOpen={modeSelectorOpen}
+      onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
+      onSelect={handleModeSelect}
+    />
   );
 }
