@@ -1,69 +1,50 @@
-```gitignore
-# Dependencies
-node_modules/
-
-# Build outputs
+```
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
 dist/
 build/
-.next/
-out/
+target/
 
-# Logs
+# Dependencies
+.venv/
+venv/
+node_modules/
+.mypy_cache/
+.pytest_cache/
+.gradle/
+
+# Logs and temp files
 *.log
+*.tmp
+*.swp
+*.swo
 
-# Environment variables
+# Environment
 .env
 .env.local
 *.env.*
 
-# IDE files
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.python-version
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/modules/
-*.sublime-workspace
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
+# System
+.DS_Store
+Thumbs.db
 
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-node_modules/
-dist/
-build/
-.nyc_output
+# Coverage
 coverage/
-.nyc_output/
-coverage/
-lib-cov
-*.seed
-*.pid
-*.gz
+htmlcov/
+.coverage
+
+# Compressed files
 *.zip
+*.gz
 *.tar
 *.tgz
 *.bz2
@@ -84,14 +65,4 @@ lib-cov
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-.DS_Store
-Thumbs.db
-```
-
-Wait, I need to reconsider this. The only modified file is `src/product/pages.tsx` which is a TypeScript React file. There are no build artifacts, dependency directories, or temporary files in the change list. According to rule #6, if the change list contains only source or config files and no build artifacts, dependencies, or temp files, I should output an empty .gitignore.
-
-Since only `src/product/pages.tsx` was modified (a source code file), and there are no artifacts or temp files in the changes, the output should be empty.
-
-```gitignore
-
 ```
