@@ -870,7 +870,7 @@ export function ProbabilityPage() {
         })}
       </ul>
     </div>
-    
+
     {/* Модальный выбор режима для главной страницы */}
     <ExamModeSelector
       isOpen={modeSelectorOpen}
