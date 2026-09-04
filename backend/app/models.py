@@ -187,6 +187,12 @@ class VariantTask(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class ExamMode(str, Enum):
+    """Режим выполнения варианта."""
+    PRACTICE = "practice"           # Домашняя работа: без таймера, с подсказками, не влияет на готовность
+    EXAM = "exam"                   # Боевой режим: таймер, без подсказок, влияет на готовность
+
+
 class VariantAttempt(Base):
     __tablename__ = "variant_attempts"
     __table_args__ = (
@@ -204,6 +210,11 @@ class VariantAttempt(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     primary_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     secondary_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Режим выполнения варианта: домашняя работа или экзамен
+    mode: Mapped[Optional[ExamMode]] = mapped_column(
+        PyEnum(ExamMode, name="exam_mode", create_type=False), nullable=True, default=ExamMode.PRACTICE
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     student: Mapped["User"] = relationship(back_populates="attempts")
 
