@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # авторизации (deps.py) импортировались без циклического импорта.
 from .database import Session, engine, get_db
 from .deps import get_current_teacher, get_current_user
-from .models import Base, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TaskSkill, TrainingMode, User, Variant
+from .models import Base, ExamMode, ExamType, Material, Skill, StudentExamLine, Subtopic, StudentSkill, Task, TaskSkill, TrainingMode, User, Variant, VariantAttempt
 from .services.mastery_engine import recalculate_with_diff
 from .services.readiness_engine import EXAM_MODES, background_recalculate_readiness
 from .security import (
@@ -1140,9 +1140,8 @@ class AttemptSubmitIn(BaseModel):
     variant_id: str
     answers: List[AttemptTaskAnswer]
     time_spent_seconds: Optional[int] = None
-    # Режим попытки: practice / topic_training / mixed_training / diagnostic /
-    # exam / exam_simulation. Readiness пересчитывается только для
-    # exam / diagnostic / exam_simulation. None трактуется как practice.
+    # Режим попытки: practice (домашка) / exam (боевой). Readiness пересчитывается только для exam.
+    # Для обратной совместимости принимаем также diagnostic/exam_simulation как exam.
     mode: Optional[str] = None
 
 
@@ -1172,12 +1171,20 @@ async def submit_attempt(
     given = {a.task_number: a.answer for a in body.answers}
     given_time = {a.task_number: a.time_spent for a in body.answers}
 
-    # Режим попытки: None трактуем как practice.
+    # Определяем режим выполнения варианта (ExamMode) и TrainingMode для обратной совместимости.
+    # Если mode='exam' -> ExamMode.EXAM, иначе ExamMode.PRACTICE.
+    exam_mode = ExamMode.PRACTICE
     mode_enum: Optional[TrainingMode] = None
     if body.mode:
-        try:
-            mode_enum = TrainingMode(body.mode)
-        except ValueError:
+        body_mode = body.mode.lower()
+        if body_mode == "exam":
+            exam_mode = ExamMode.EXAM
+            mode_enum = TrainingMode.EXAM
+        elif body_mode in ("diagnostic", "exam_simulation"):
+            exam_mode = ExamMode.EXAM
+            mode_enum = TrainingMode.DIAGNOSTIC if body_mode == "diagnostic" else TrainingMode.EXAM_SIMULATION
+        else:
+            exam_mode = ExamMode.PRACTICE
             mode_enum = TrainingMode.PRACTICE
 
     primary = 0
@@ -1200,11 +1207,15 @@ async def submit_attempt(
         task_rows.append((number, status, ans, given_time.get(number)))
 
     secondary = primary_to_secondary(primary)
+    now = datetime.now(timezone.utc)
     attempt = VariantAttempt(
         student_id=student.id,
         variant_id=variant.id,
         primary_score=primary,
         secondary_score=secondary,
+        mode=exam_mode,
+        started_at=now,
+        finished_at=now,
     )
     db.add(attempt)
     await db.flush()  # чтобы получить attempt.id
@@ -1235,9 +1246,8 @@ async def submit_attempt(
         skills_impacted = await recalculate_with_diff(
             db, student.id, created_task_attempt_ids
         )
-        # Readiness — ТОЛЬКО если попытка экзаменационная
-        # (exam / diagnostic / exam_simulation) — фоном.
-        if mode_enum in EXAM_MODES:
+        # Readiness — ТОЛЬКО если попытка в режиме экзамена (ExamMode.EXAM).
+        if exam_mode == ExamMode.EXAM:
             background_tasks.add_task(
                 background_recalculate_readiness, student.id, created_task_attempt_ids
             )

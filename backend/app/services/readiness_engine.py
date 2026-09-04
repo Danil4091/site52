@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AttemptStatus,
+    ExamMode,
     Skill,
     StudentExamLine,
     StudentSkill,
@@ -41,11 +42,7 @@ from app.models import (
 
 # Режимы попытки, которые считаются «экзаменационными».
 # Readiness пересчитывается ТОЛЬКО по попыткам в этих режимах.
-EXAM_MODES = {
-    TrainingMode.EXAM,              # полный вариант ЕГЭ
-    TrainingMode.DIAGNOSTIC,        # диагностический тест
-    TrainingMode.EXAM_SIMULATION,   # экзаменационная симуляция
-}
+EXAM_MODES = {ExamMode.EXAM}
 
 # Базовые нормативы времени (секунды) на задачу по номеру линии.
 #   Часть 1 (№1–13):  3–5 мин  -> 240 c (4 мин).
@@ -236,7 +233,7 @@ async def recalculate_line(db: AsyncSession, student_id, line_number: int) -> St
 
     Берёт ВСЕ экзаменационные попытки ученика по этой линии (не только новые).
     """
-    # 1) Экзаменационные попытки по линии (mode in EXAM_MODES, task.task_number == line).
+    # 1) Экзаменационные попытки по линии (VariantAttempt.mode == ExamMode.EXAM).
     rows = (
         await db.execute(
             select(TaskAttempt, VariantAttempt.started_at)
@@ -244,7 +241,7 @@ async def recalculate_line(db: AsyncSession, student_id, line_number: int) -> St
             .join(Task, TaskAttempt.task_id == Task.id)
             .where(VariantAttempt.student_id == student_id)
             .where(Task.task_number == line_number)
-            .where(TaskAttempt.mode.in_(EXAM_MODES))
+            .where(VariantAttempt.mode == ExamMode.EXAM)
         )
     ).all()
 
