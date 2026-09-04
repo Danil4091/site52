@@ -520,6 +520,13 @@ export function VariantsPage() {
         </>
       )}
     </div>
+
+    {/* Модальный выбор режима для страницы вариантов */}
+    <ExamModeSelector
+      isOpen={modeSelectorOpen}
+      onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
+      onSelect={handleModeSelect}
+    />
   );
 }
 
@@ -870,12 +877,5 @@ export function ProbabilityPage() {
         })}
       </ul>
     </div>
-
-    {/* Модальный выбор режима для главной страницы */}
-    <ExamModeSelector
-      isOpen={modeSelectorOpen}
-      onClose={() => { setModeSelectorOpen(false); setPendingVariantId(null); }}
-      onSelect={handleModeSelect}
-    />
   );
 }
