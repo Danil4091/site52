@@ -69,7 +69,7 @@ export function LiveTicker() {
         <div className="overflow-hidden" aria-label="Последние события учеников">
           <div className="marquee-track items-center gap-2 py-2">
             {track.map((e, i) => (
-              <span key={i} className="mr-2 flex items-center gap-2 whitespace-nowrap rounded-full border border-board-600/60 bg-board-800/60 px-3 py-1 text-[11.5px] font-medium text-chalk-300 transition-colors duration-200 hover:border-mark-yellow/50 hover:text-chalk-50">
+              <span key={`${i}-${e.slice(0, 15)}`} className="mr-2 flex items-center gap-2 whitespace-nowrap rounded-full border border-board-600/60 bg-board-800/60 px-3 py-1 text-[11.5px] font-medium text-chalk-300 transition-colors duration-200 hover:border-mark-yellow/50 hover:text-chalk-50">
                 <span className="h-1.5 w-1.5 rounded-full bg-mark-yellow" />
                 {e}
               </span>
@@ -258,7 +258,7 @@ export function FloatingFormulas() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
       {formulas.map((f, i) => (
-        <span key={f} className="drift absolute font-hand text-lg text-chalk-600/40 sm:text-xl"
+        <span key={`${f}-${i}`} className="drift absolute font-hand text-lg text-chalk-600/40 sm:text-xl"
           style={{ left: `${(i * 13 + 6) % 92}%`, top: `${(i * 23 + 12) % 80}%`, "--dur": `${12 + (i % 5) * 3}s`, "--dx": `${(i % 2 ? 1 : -1) * (14 + i * 3)}px`, "--dy": `${(i % 3 ? -1 : 1) * (16 + i * 2)}px`, "--rot-a": `${-4 + i}deg`, "--rot-b": `${3 - i}deg` } as React.CSSProperties}>
           {f}
         </span>
